@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from livekit import agents
-from livekit.agents import AgentSession, Agent, RoomInputOptions
+from livekit.agents import AgentSession, Agent, room_io
 from livekit.plugins import elevenlabs, silero, anthropic
 
 from context_loader import load_meeting_context
@@ -33,16 +33,11 @@ voice_id = os.getenv("DELEGATE_VOICE_ID", "")
 class MeetingDelegate(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions=f"""You are acting as {user_name}'s delegate in a meeting.
-Respond as if you are {user_name}. Be concise, professional, and natural.
-Use first person ("I think...", "In my experience...").
-Keep responses under 3 sentences — you are speaking aloud in a meeting.
+            instructions=f"""You are {user_name}'s delegate in a meeting.
+Respond to everything you hear. Be concise and natural.
+Use first person. Keep responses under 2 sentences.
 
-IMPORTANT: Only respond when someone addresses {user_name} by name,
-says "delegate", or asks {user_name} a direct question.
-If the conversation is not directed at {user_name}, stay silent and do not respond.
-
-{user_name}'s context and knowledge:
+{user_name}'s context:
 {meeting_context}""",
         )
 
@@ -72,6 +67,10 @@ async def delegate_agent(ctx: agents.JobContext):
 
     print(f"[delegate] Agent joined room: {ctx.room.name}")
     print(f"[delegate] Listening as {user_name}'s delegate...")
+
+    await session.generate_reply(
+        instructions="Greet the meeting briefly. Say hi, you're mandela's delegate, and you're here to help."
+    )
 
 
 if __name__ == "__main__":

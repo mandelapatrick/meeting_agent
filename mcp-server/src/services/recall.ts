@@ -51,6 +51,10 @@ export async function createBot(
           audio: true,
         },
       };
+      body.variant = {
+        google_meet: "web_4_core",
+        zoom: "web_4_core",
+      };
     }
 
     const response = await fetch(`${RECALL_BASE_URL}/bot/`, {

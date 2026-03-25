@@ -118,9 +118,19 @@
         log(`Connected to room: ${room.name}`);
 
         // Step 4: Publish meeting audio to LiveKit room
-        const localTrack = new LivekitClient.LocalAudioTrack(audioTrack);
-        await room.localParticipant.publishTrack(localTrack);
+        await room.localParticipant.publishTrack(audioTrack, {
+          source: LivekitClient.Track.Source.Microphone,
+          name: 'meeting-audio',
+        });
         log('Published meeting audio to LiveKit room');
+
+        // Log track stats periodically
+        setInterval(() => {
+          const pub = room.localParticipant.audioTrackPublications;
+          pub.forEach((p) => {
+            log(`Track ${p.trackName}: enabled=${p.track?.mediaStreamTrack?.enabled}, muted=${p.isMuted}`);
+          });
+        }, 5000);
 
         setState('listening', 'Listening...');
         log('Bridge active — waiting for agent to join...');
