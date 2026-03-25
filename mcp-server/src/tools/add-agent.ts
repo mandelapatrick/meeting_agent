@@ -45,7 +45,8 @@ export async function addAgentHandler(args: {
 
   // Create Recall.ai bot
   const botName = `${user.name}'s Delegate`;
-  const bot = await createBot(meeting.meetingUrl, botName);
+  const agentUrl = process.env.AGENT_WEBHOOK_URL;
+  const bot = await createBot(meeting.meetingUrl, botName, agentUrl);
 
   // Create session record
   const session = await createAgentSession({

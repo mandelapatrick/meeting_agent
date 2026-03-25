@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -17,25 +18,45 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // TODO: Replace with real ElevenLabs API call
-  // const elevenLabsForm = new FormData();
-  // elevenLabsForm.append('name', `${session.user?.name}'s Voice`);
-  // elevenLabsForm.append('files', audioFile);
-  // const response = await fetch('https://api.elevenlabs.io/v1/voices/add', {
-  //   method: 'POST',
-  //   headers: { 'xi-api-key': process.env.ELEVEN_API_KEY! },
-  //   body: elevenLabsForm,
-  // });
-  // const data = await response.json();
+  const apiKey = process.env.ELEVEN_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "ElevenLabs API key not configured" },
+      { status: 500 }
+    );
+  }
 
-  // Mock response
-  const mockVoiceId = `voice_${Date.now()}`;
+  // Call ElevenLabs voice cloning API
+  const elevenLabsForm = new FormData();
+  elevenLabsForm.append("name", `${session.user?.name || "User"}'s Voice`);
+  elevenLabsForm.append("files", audioFile);
 
-  // TODO: Store voice_id in Supabase users table
-  // await supabase.from('users').update({ voice_clone_id: mockVoiceId }).eq('email', session.user?.email);
+  const response = await fetch("https://api.elevenlabs.io/v1/voices/add", {
+    method: "POST",
+    headers: { "xi-api-key": apiKey },
+    body: elevenLabsForm,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[voice-clone] ElevenLabs error:", errorText);
+    return NextResponse.json(
+      { error: "Failed to create voice clone" },
+      { status: 502 }
+    );
+  }
+
+  const data = await response.json();
+  const voiceId = data.voice_id;
+
+  // Store voice_clone_id in Supabase users table
+  await supabase
+    .from("users")
+    .update({ voice_clone_id: voiceId })
+    .eq("email", session.user?.email);
 
   return NextResponse.json({
-    voiceId: mockVoiceId,
-    message: "Voice clone created successfully (mock)",
+    voiceId,
+    message: "Voice clone created successfully",
   });
 }

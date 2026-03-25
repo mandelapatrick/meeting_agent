@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -17,15 +18,48 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // TODO: Store photo in Supabase Storage and save URL to users table
-  // const { data } = await supabase.storage
-  //   .from('avatars')
-  //   .upload(`${session.user?.email}/avatar.jpg`, photo);
+  const email = session.user?.email;
+  if (!email) {
+    return NextResponse.json(
+      { error: "No email in session" },
+      { status: 400 }
+    );
+  }
 
-  const mockAvatarId = `avatar_${Date.now()}`;
+  // Upload to Supabase Storage
+  const buffer = Buffer.from(await photo.arrayBuffer());
+  const filePath = `${email}/avatar.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("avatars")
+    .upload(filePath, buffer, {
+      contentType: photo.type || "image/jpeg",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error("[avatar] Upload error:", uploadError);
+    return NextResponse.json(
+      { error: "Failed to upload avatar" },
+      { status: 500 }
+    );
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from("avatars")
+    .getPublicUrl(filePath);
+
+  const avatarUrl = urlData.publicUrl;
+
+  // Update user record
+  await supabase
+    .from("users")
+    .update({ avatar_url: avatarUrl })
+    .eq("email", email);
 
   return NextResponse.json({
-    avatarId: mockAvatarId,
-    message: "Profile photo uploaded successfully (mock)",
+    avatarUrl,
+    message: "Profile photo uploaded successfully",
   });
 }

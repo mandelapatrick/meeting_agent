@@ -1,23 +1,36 @@
 """
-Claude Delegate - Meeting Agent
+Claude Delegate - Meeting Agent (Output Media approach)
 
-Real-time AI agent that joins meetings via Recall.ai,
-listens for when the user is addressed, and responds
-with the user's cloned voice using ElevenLabs TTS.
-
-Pipeline: Recall.ai STT -> Claude API -> ElevenLabs TTS -> Recall.ai audio
+FastAPI server that:
+1. Serves a webpage loaded by the Recall.ai bot (Output Media)
+2. The webpage receives real-time transcripts via Recall.ai WebSocket
+3. Webpage POSTs transcripts to /api/respond
+4. Backend generates response (Claude) + TTS (ElevenLabs)
+5. Returns MP3 audio → webpage plays it → bot streams to meeting
 """
 
-import asyncio
-import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
-import anthropic
-import websockets
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from project root
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+import anthropic
+import httpx
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from context_loader import load_meeting_context
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -26,156 +39,154 @@ class AgentConfig:
     voice_clone_id: str
     anthropic_api_key: str
     elevenlabs_api_key: str
-    recall_bot_id: str
-    context: str = ""
 
 
-@dataclass
-class TranscriptEntry:
+config = AgentConfig(
+    user_name=os.getenv("DELEGATE_USER_NAME", "User"),
+    voice_clone_id=os.getenv("DELEGATE_VOICE_ID", ""),
+    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+    elevenlabs_api_key=os.getenv("ELEVEN_API_KEY", ""),
+)
+
+# Preload context once
+meeting_context = load_meeting_context("Meeting")
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+
+class TranscriptEntry(BaseModel):
     speaker: str
     text: str
-    timestamp: float
 
 
-class MeetingAgent:
-    """
-    Agent that listens to a meeting transcript stream and responds
-    when the user is addressed.
-    """
+class RespondRequest(BaseModel):
+    speaker: str
+    text: str
+    transcript: list[TranscriptEntry] = []
 
-    def __init__(self, config: AgentConfig):
-        self.config = config
-        self.transcript: list[TranscriptEntry] = []
-        self.client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
-        self.is_speaking = False
 
-    def should_respond(self, entry: TranscriptEntry) -> bool:
-        """Determine if the agent should respond to this transcript entry."""
-        text_lower = entry.text.lower()
-        name_lower = self.config.user_name.lower()
+# ---------------------------------------------------------------------------
+# Response logic
+# ---------------------------------------------------------------------------
 
-        # Direct name mention
-        if name_lower in text_lower:
-            return True
 
-        # Delegate invocation
-        if "delegate" in text_lower or "hey delegate" in text_lower:
-            return True
+def should_respond(text: str, transcript: list[TranscriptEntry]) -> bool:
+    """Determine if the agent should respond to this transcript entry."""
+    text_lower = text.lower()
+    name_lower = config.user_name.lower()
 
-        # Direct question patterns after name
-        recent = self.transcript[-3:] if len(self.transcript) >= 3 else self.transcript
-        recent_text = " ".join(e.text.lower() for e in recent)
-        if name_lower in recent_text and text_lower.rstrip().endswith("?"):
-            return True
+    # Direct name mention
+    if name_lower in text_lower:
+        return True
 
-        return False
+    # Delegate invocation
+    if "delegate" in text_lower:
+        return True
 
-    async def generate_response(self, question: str) -> str:
-        """Generate a response using Claude with the user's context."""
-        transcript_context = "\n".join(
-            f"{e.speaker}: {e.text}" for e in self.transcript[-20:]
-        )
+    # Question after recent name mention
+    recent_text = " ".join(e.text.lower() for e in transcript[-5:])
+    if name_lower in recent_text and text_lower.rstrip().endswith("?"):
+        return True
 
-        system_prompt = f"""You are acting as {self.config.user_name}'s delegate in a meeting.
-Respond as if you are {self.config.user_name}. Be concise, professional, and natural.
+    return False
+
+
+async def generate_response(question: str, transcript: list[TranscriptEntry]) -> str:
+    """Generate a response using Claude with the user's context."""
+    transcript_context = "\n".join(
+        f"{e.speaker}: {e.text}" for e in transcript[-20:]
+    )
+
+    system_prompt = f"""You are acting as {config.user_name}'s delegate in a meeting.
+Respond as if you are {config.user_name}. Be concise, professional, and natural.
 Use first person ("I think...", "In my experience...").
+Keep responses under 3 sentences — this will be spoken aloud.
 
-User's context and knowledge:
-{self.config.context}
+{config.user_name}'s context and knowledge:
+{meeting_context}
 
 Recent meeting transcript:
 {transcript_context}"""
 
-        response = await self.client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=300,
-            system=system_prompt,
-            messages=[{"role": "user", "content": question}],
-        )
-
-        return response.content[0].text
-
-    async def synthesize_speech(self, text: str) -> bytes:
-        """Convert text to speech using ElevenLabs with the cloned voice."""
-        # TODO: Replace with real ElevenLabs API call
-        # import httpx
-        # async with httpx.AsyncClient() as client:
-        #     response = await client.post(
-        #         f"https://api.elevenlabs.io/v1/text-to-speech/{self.config.voice_clone_id}/stream",
-        #         headers={"xi-api-key": self.config.elevenlabs_api_key},
-        #         json={
-        #             "text": text,
-        #             "model_id": "eleven_turbo_v2_5",
-        #             "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
-        #         },
-        #     )
-        #     return response.content
-        return b""  # Mock
-
-    async def handle_transcript_event(self, event: dict):
-        """Process a real-time transcript event from Recall.ai."""
-        entry = TranscriptEntry(
-            speaker=event.get("speaker", "Unknown"),
-            text=event.get("text", ""),
-            timestamp=event.get("timestamp", 0),
-        )
-        self.transcript.append(entry)
-
-        if self.is_speaking:
-            return
-
-        if self.should_respond(entry):
-            self.is_speaking = True
-            try:
-                response_text = await self.generate_response(entry.text)
-                audio = await self.synthesize_speech(response_text)
-
-                # TODO: Send audio back to Recall.ai bot
-                # await self.inject_audio(audio)
-
-                print(f"[DELEGATE] Response: {response_text}")
-            finally:
-                self.is_speaking = False
-
-    async def connect_to_recall(self, ws_url: str):
-        """Connect to Recall.ai WebSocket for real-time transcription."""
-        async for websocket in websockets.connect(ws_url):
-            try:
-                async for message in websocket:
-                    event = json.loads(message)
-                    if event.get("type") == "transcript":
-                        await self.handle_transcript_event(event)
-            except websockets.ConnectionClosed:
-                print("[DELEGATE] WebSocket disconnected, reconnecting...")
-                continue
-
-    def get_meeting_summary(self) -> dict:
-        """Generate a post-meeting summary."""
-        return {
-            "transcript": [
-                {"speaker": e.speaker, "text": e.text, "timestamp": e.timestamp}
-                for e in self.transcript
-            ],
-            "total_entries": len(self.transcript),
-        }
-
-
-async def main():
-    """Entry point for the meeting agent."""
-    config = AgentConfig(
-        user_name=os.getenv("DELEGATE_USER_NAME", "User"),
-        voice_clone_id=os.getenv("DELEGATE_VOICE_ID", ""),
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-        elevenlabs_api_key=os.getenv("ELEVEN_API_KEY", ""),
-        recall_bot_id=os.getenv("RECALL_BOT_ID", ""),
+    client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+    response = await client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=200,
+        system=system_prompt,
+        messages=[{"role": "user", "content": question}],
     )
 
-    agent = MeetingAgent(config)
-
-    ws_url = os.getenv("RECALL_WS_URL", "ws://localhost:8080/ws")
-    print(f"[DELEGATE] Connecting to {ws_url}...")
-    await agent.connect_to_recall(ws_url)
+    return response.content[0].text
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+async def synthesize_speech(text: str) -> bytes:
+    """Convert text to speech using ElevenLabs with the cloned voice."""
+    if not config.voice_clone_id or not config.elevenlabs_api_key:
+        print("[agent] No voice clone configured, skipping TTS")
+        return b""
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{config.voice_clone_id}/stream",
+            headers={"xi-api-key": config.elevenlabs_api_key},
+            json={
+                "text": text,
+                "model_id": "eleven_turbo_v2_5",
+                "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+            },
+            timeout=30.0,
+        )
+
+        if not response.is_success:
+            print(f"[agent] ElevenLabs error ({response.status_code}): {response.text}")
+            return b""
+
+        return response.content
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="Claude Delegate Meeting Agent")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "user": config.user_name}
+
+
+@app.post("/api/respond")
+async def respond(req: RespondRequest):
+    """Process transcript and return audio response if triggered."""
+    print(f"[transcript] {req.speaker}: {req.text}")
+
+    if not should_respond(req.text, req.transcript):
+        return JSONResponse({"action": "skip"}, status_code=200)
+
+    print(f"[agent] Generating response to: {req.text}")
+    response_text = await generate_response(req.text, req.transcript)
+    print(f"[agent] Response: {response_text}")
+
+    audio = await synthesize_speech(response_text)
+
+    if not audio:
+        print("[agent] No audio generated")
+        return JSONResponse({"action": "no_audio", "text": response_text})
+
+    print(f"[agent] Returning {len(audio)} bytes of audio")
+    return Response(content=audio, media_type="audio/mpeg")
+
+
+# Serve the bot webpage
+static_dir = Path(__file__).parent / "static"
+app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")

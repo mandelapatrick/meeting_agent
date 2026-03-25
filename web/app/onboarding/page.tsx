@@ -67,28 +67,47 @@ export default function OnboardingPage() {
   })();
 
   const handleNext = async () => {
-    if (currentStep === STEPS.length - 3) {
-      // Submit everything before showing "complete"
-      setIsSubmitting(true);
-      try {
-        // Upload voice clone
+    setIsSubmitting(true);
+    try {
+      if (currentStep === 1) {
+        // Leaving profile step — create user record in Supabase
+        await fetch("/api/onboarding/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ onboardingCompleted: false }),
+        });
+      }
+
+      if (currentStep === STEPS.length - 3) {
+        // Leaving connectors step — upload voice and avatar
         if (voiceBlob) {
           const voiceForm = new FormData();
           voiceForm.append("audio", voiceBlob, "voice.webm");
           await fetch("/api/voice-clone", { method: "POST", body: voiceForm });
         }
 
-        // Upload avatar
         if (photoBlob) {
           const photoForm = new FormData();
           photoForm.append("photo", photoBlob, "avatar.jpg");
           await fetch("/api/avatar", { method: "POST", body: photoForm });
         }
-      } catch {
-        // Continue anyway for mock mode
       }
-      setIsSubmitting(false);
+
+      if (currentStep === STEPS.length - 2) {
+        // Leaving PARA step — finalize onboarding
+        await fetch("/api/onboarding/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connectors,
+            onboardingCompleted: true,
+          }),
+        });
+      }
+    } catch (err) {
+      console.error("Onboarding step error:", err);
     }
+    setIsSubmitting(false);
     setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
   };
 
@@ -179,7 +198,6 @@ export default function OnboardingPage() {
                 {/* Skip for testing without Google OAuth */}
                 <button
                   onClick={() => {
-                    setIsSignedIn(true);
                     setProfileData({ name: "Test User", email: "test@example.com" });
                     setCurrentStep(1);
                   }}

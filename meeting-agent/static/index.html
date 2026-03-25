@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Delegate</title>
+  <style>
+    body {
+      margin: 0;
+      background: #1a1a2e;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #status {
+      text-align: center;
+    }
+    #status h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+    #state {
+      font-size: 1.2rem;
+      opacity: 0.7;
+    }
+    #transcript-log {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      opacity: 0.5;
+    }
+    .listening { color: #4ade80; }
+    .thinking { color: #facc15; }
+    .speaking { color: #60a5fa; }
+    .error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div id="status">
+    <h1>Claude Delegate</h1>
+    <div id="state" class="listening">Listening...</div>
+  </div>
+  <div id="transcript-log"></div>
+
+  <script>
+    const BACKEND_URL = window.location.origin;
+    const WS_URL = 'wss://meeting-data.bot.recall.ai/api/v1/transcript';
+
+    let isSpeaking = false;
+    let transcript = [];
+
+    const stateEl = document.getElementById('state');
+    const logEl = document.getElementById('transcript-log');
+
+    function setState(state, text) {
+      stateEl.className = state;
+      stateEl.textContent = text;
+    }
+
+    function log(msg) {
+      const div = document.createElement('div');
+      div.textContent = msg;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log('[delegate]', msg);
+    }
+
+    // Connect to Recall.ai transcript WebSocket
+    function connectTranscript() {
+      log('Connecting to transcript stream...');
+      const ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        log('Connected to transcript stream');
+        setState('listening', 'Listening...');
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const words = data.transcript?.words || [];
+          const text = words.map(w => w.text).join(' ').trim();
+          const speaker = data.transcript?.participant?.name || 'Unknown';
+
+          if (!text) return;
+
+          log(`${speaker}: ${text}`);
+          transcript.push({ speaker, text });
+
+          if (isSpeaking) return;
+
+          // Send to backend for processing
+          await processTranscript(speaker, text);
+        } catch (e) {
+          log(`Error parsing transcript: ${e.message}`);
+        }
+      };
+
+      ws.onclose = () => {
+        log('Transcript stream disconnected, reconnecting in 2s...');
+        setTimeout(connectTranscript, 2000);
+      };
+
+      ws.onerror = (e) => {
+        log(`WebSocket error: ${e.message || 'unknown'}`);
+      };
+    }
+
+    async function processTranscript(speaker, text) {
+      try {
+        setState('thinking', 'Thinking...');
+
+        const response = await fetch(`${BACKEND_URL}/api/respond`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          },
+          body: JSON.stringify({
+            speaker,
+            text,
+            transcript: transcript.slice(-20)
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Backend error: ${response.status}`);
+        }
+
+        // Check if response is audio or JSON (skip)
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          setState('listening', 'Listening...');
+          return;
+        }
+
+        // Response is MP3 audio
+        const audioBlob = await response.blob();
+        if (audioBlob.size === 0) {
+          setState('listening', 'Listening...');
+          return;
+        }
+
+        await playAudio(audioBlob);
+      } catch (e) {
+        log(`Error: ${e.message}`);
+        setState('listening', 'Listening...');
+      }
+    }
+
+    function playAudio(blob) {
+      return new Promise((resolve) => {
+        isSpeaking = true;
+        setState('speaking', 'Speaking...');
+
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+
+        audio.onended = () => {
+          isSpeaking = false;
+          URL.revokeObjectURL(url);
+          setState('listening', 'Listening...');
+          resolve();
+        };
+
+        audio.onerror = (e) => {
+          log(`Audio playback error: ${e.message || 'unknown'}`);
+          isSpeaking = false;
+          URL.revokeObjectURL(url);
+          setState('listening', 'Listening...');
+          resolve();
+        };
+
+        audio.play().catch(e => {
+          log(`Audio play failed: ${e.message}`);
+          isSpeaking = false;
+          URL.revokeObjectURL(url);
+          setState('listening', 'Listening...');
+          resolve();
+        });
+      });
+    }
+
+    // Start
+    connectTranscript();
+  </script>
+</body>
+</html>

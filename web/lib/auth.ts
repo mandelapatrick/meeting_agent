@@ -26,12 +26,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account, profile }) {
       // Persist the Google access token and refresh token
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
+        token.googleId = account.providerAccountId;
 
         // Save refresh token to file so the MCP server can use it
         if (account.refresh_token) {
@@ -43,6 +44,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                   refreshToken: account.refresh_token,
                   accessToken: account.access_token,
                   expiresAt: account.expires_at,
+                  googleId: account.providerAccountId,
+                  email: token.email,
+                  name: token.name,
                 },
                 null,
                 2
@@ -56,8 +60,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      // Make the access token available to the client
+      // Make the access token and Google ID available to the client
       (session as any).accessToken = token.accessToken;
+      (session as any).googleId = token.googleId;
       return session;
     },
   },

@@ -5,29 +5,82 @@ export interface RecallBot {
   status: "joining" | "in_waiting_room" | "active" | "completed" | "failed";
 }
 
-// Mock Recall.ai service — replace with real API calls
+const RECALL_REGION = process.env.RECALL_REGION || "us-west-2";
+const RECALL_BASE_URL = `https://${RECALL_REGION}.recall.ai/api/v1`;
+
+function hasRealApiKey(): boolean {
+  const key = process.env.RECALL_API_KEY;
+  return !!key && !key.startsWith("your-");
+}
+
+function authHeaders(): Record<string, string> {
+  return {
+    Authorization: `Token ${process.env.RECALL_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+// Mock state for when no API key is configured
 let mockBots: RecallBot[] = [];
 
 export async function createBot(
   meetingUrl: string,
-  botName: string
+  botName: string,
+  agentUrl?: string
 ): Promise<RecallBot> {
-  // TODO: Replace with real Recall.ai API call
-  // const response = await fetch('https://api.recall.ai/api/v1/bot/', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Token ${process.env.RECALL_API_KEY}`,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({
-  //     meeting_url: meetingUrl,
-  //     bot_name: botName,
-  //     real_time_transcription: {
-  //       destination_url: `wss://${process.env.AGENT_WS_HOST}/ws`,
-  //     },
-  //   }),
-  // });
+  if (hasRealApiKey()) {
+    const body: Record<string, unknown> = {
+      meeting_url: meetingUrl,
+      bot_name: botName,
+    };
 
+    // Use Output Media to load the agent webpage in the bot's browser
+    // The webpage handles transcript reception and audio playback
+    if (agentUrl) {
+      body.output_media = {
+        camera: {
+          kind: "webpage",
+          config: {
+            url: agentUrl,
+          },
+        },
+      };
+      body.recording_config = {
+        include_bot_in_recording: {
+          audio: true,
+        },
+        transcript: {
+          provider: {
+            recallai_streaming: {},
+          },
+        },
+      };
+    }
+
+    const response = await fetch(`${RECALL_BASE_URL}/bot/`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Recall.ai API error (${response.status}): ${errorText}`
+      );
+    }
+
+    const data = await response.json();
+    return {
+      id: data.id,
+      meetingUrl,
+      botName,
+      status: data.status_changes?.[0]?.code || "joining",
+    };
+  }
+
+  // Mock mode
+  console.warn("[recall] No API key configured, using mock bot");
   const bot: RecallBot = {
     id: `bot_${Date.now()}`,
     meetingUrl,
@@ -37,7 +90,6 @@ export async function createBot(
 
   mockBots.push(bot);
 
-  // Simulate bot joining after a delay
   setTimeout(() => {
     bot.status = "active";
   }, 3000);
@@ -45,6 +97,24 @@ export async function createBot(
   return bot;
 }
 
-export async function getBotStatus(botId: string): Promise<RecallBot | null> {
+export async function getBotStatus(
+  botId: string
+): Promise<RecallBot | null> {
+  if (hasRealApiKey()) {
+    const response = await fetch(`${RECALL_BASE_URL}/bot/${botId}/`, {
+      headers: authHeaders(),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    return {
+      id: data.id,
+      meetingUrl: data.meeting_url,
+      botName: data.bot_name,
+      status: data.status_changes?.[0]?.code || "joining",
+    };
+  }
+
   return mockBots.find((b) => b.id === botId) ?? null;
 }
