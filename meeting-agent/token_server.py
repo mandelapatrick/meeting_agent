@@ -24,7 +24,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from livekit.api import AccessToken, LiveKitAPI, VideoGrants, CreateAgentDispatchRequest
-from supabase import create_client
+try:
+    from supabase import create_client
+except ImportError:
+    create_client = None
 
 # ---------------------------------------------------------------------------
 # Config
@@ -46,7 +49,7 @@ RECALL_BASE_URL = f"https://{RECALL_REGION}.recall.ai/api/v1"
 
 AGENT_WEBHOOK_URL = os.getenv("AGENT_WEBHOOK_URL", "")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if create_client and SUPABASE_URL and SUPABASE_KEY else None
 
 # ---------------------------------------------------------------------------
 # App
