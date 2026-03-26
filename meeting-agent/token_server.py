@@ -8,10 +8,12 @@ cloud-hosted agent to the room, and serves static files.
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-load_dotenv(Path(__file__).resolve().parent / ".env.local", override=True)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env.local", override=True)
+except ImportError:
+    pass  # dotenv not needed when env vars are injected (e.g., Render)
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware

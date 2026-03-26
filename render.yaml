@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: meeting-agent-bridge
+    runtime: docker
+    dockerfilePath: meeting-agent/Dockerfile.token-server
+    dockerContext: meeting-agent
+    plan: free
+    envVars:
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false

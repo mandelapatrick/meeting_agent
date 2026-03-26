@@ -1,14 +1,16 @@
 {
-  "name": "claude-delegate",
-  "version": "0.1.0",
-  "description": "Embodied AI agent that represents you in Zoom and Google Meet meetings using your cloned voice and context",
-  "author": "mandelapatrick",
-  "skills": [
-    "list-meetings",
-    "add-agent-to-meeting",
-    "onboard",
-    "manage-brain"
-  ],
-  "mcp": true,
-  "hooks": true
+  "name": "meeting-agent",
+  "version": "1.0.0",
+  "description": "AI meeting delegate that joins Google Meet and Zoom calls, listens, and responds using your cloned voice",
+  "author": {
+    "name": "mandelapatrick"
+  },
+  "keywords": ["meetings", "voice-agent", "livekit", "recall-ai", "delegate"],
+  "mcpServers": {
+    "meeting-agent": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
+  }
 }
