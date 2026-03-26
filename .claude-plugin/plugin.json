@@ -16,6 +16,5 @@
         "APP_URL": "https://meeetingagent.vercel.app"
       }
     }
-  },
-  "hooks": "./hooks/hooks.json"
+  }
 }
