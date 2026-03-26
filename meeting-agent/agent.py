@@ -54,7 +54,7 @@ async def delegate_agent(ctx: agents.JobContext):
     dispatch_user_name = user_name  # default from env
 
     try:
-        metadata = json.loads(ctx.room.metadata or "{}")
+        metadata = json.loads(ctx.job.metadata or "{}")
         if metadata.get("voice_id"):
             dispatch_voice_id = metadata["voice_id"]
         if metadata.get("user_name"):
