@@ -5,7 +5,7 @@
       "args": ["mcp-server/dist/index.js"],
       "cwd": "/Users/mandelapatrick/Documents/claude projects/claude-delegate",
       "env": {
-        "NEXT_PUBLIC_APP_URL": "http://localhost:3000"
+        "NEXT_PUBLIC_APP_URL": "https://meeetingagent.vercel.app"
       }
     }
   }
