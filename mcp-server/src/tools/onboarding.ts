@@ -1,4 +1,4 @@
-import { getOnboardingStatus } from "../services/supabase.js";
+import { getOnboardingStatus, getAppUrl } from "../services/proxy.js";
 
 export const getOnboardingStatusToolDef = {
   name: "get_onboarding_status",
@@ -51,7 +51,7 @@ export const openOnboardingToolDef = {
 };
 
 export async function openOnboardingHandler(): Promise<string> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const appUrl = getAppUrl();
   const onboardingUrl = `${appUrl}/onboarding`;
 
   // Open browser

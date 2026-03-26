@@ -10,7 +10,19 @@
     "meeting-agent": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
-      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+      "cwd": "${CLAUDE_PLUGIN_ROOT}",
+      "env": {
+        "PROXY_URL": "https://meeting-agent-h4ny.onrender.com",
+        "APP_URL": "https://meeetingagent.vercel.app"
+      }
     }
+  },
+  "hooks": {
+    "PostInstall": [
+      {
+        "type": "command",
+        "command": "cd ${CLAUDE_PLUGIN_ROOT}/mcp-server && npm install && npm run build"
+      }
+    ]
   }
 }

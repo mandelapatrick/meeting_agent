@@ -1,4 +1,4 @@
-import { listMeetings, type Meeting } from "../services/calendar.js";
+import { listMeetings, type Meeting } from "../services/proxy.js";
 
 export const listMeetingsToolDef = {
   name: "list_meetings",

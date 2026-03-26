@@ -1,6 +1,4 @@
-import { getMeetingById } from "../services/calendar.js";
-import { createBot } from "../services/recall.js";
-import { createAgentSession, getUser } from "../services/supabase.js";
+import { getMeetingById, getOnboardingStatus, dispatchAgent } from "../services/proxy.js";
 
 export const addAgentToolDef = {
   name: "add_agent_to_meeting",
@@ -21,13 +19,9 @@ export const addAgentToolDef = {
 export async function addAgentHandler(args: {
   meeting_id: string;
 }): Promise<string> {
-  const user = await getUser();
-  if (!user) {
+  const status = await getOnboardingStatus();
+  if (!status.completed || !status.user) {
     return "Error: You need to complete onboarding first. Run `/onboard` to set up your delegate.";
-  }
-
-  if (!user.onboardingCompleted) {
-    return "Error: Onboarding is incomplete. Run `/onboard` to finish setting up your delegate.";
   }
 
   const meeting = await getMeetingById(args.meeting_id);
@@ -43,19 +37,13 @@ export async function addAgentHandler(args: {
     return `Your delegate is already assigned to "${meeting.title}".`;
   }
 
-  // Create Recall.ai bot with unique LiveKit room name
-  const botName = `${user.name}'s Delegate`;
-  const agentUrl = process.env.AGENT_WEBHOOK_URL;
-  const roomName = `meeting-${args.meeting_id.slice(0, 12)}-${Date.now()}`;
-  const bot = await createBot(meeting.meetingUrl, botName, agentUrl, roomName);
-
-  // Create session record
-  const session = await createAgentSession({
-    userId: user.id,
-    meetingId: meeting.id,
+  const botName = `${status.user.name}'s Delegate`;
+  const result = await dispatchAgent({
+    meetingUrl: meeting.meetingUrl,
     meetingTitle: meeting.title,
-    recallBotId: bot.id,
-    status: "joining",
+    meetingId: meeting.id,
+    botName,
+    userId: status.user.id,
   });
 
   return [
@@ -67,8 +55,8 @@ export async function addAgentHandler(args: {
     `- **Time:** ${new Date(meeting.start).toLocaleString()}`,
     `- **Platform:** ${meeting.platform === "zoom" ? "Zoom" : "Google Meet"}`,
     `- **Bot Name:** ${botName}`,
-    `- **Status:** ${bot.status}`,
-    `- **Session ID:** \`${session.id}\``,
+    `- **Status:** ${result.status}`,
+    `- **Session ID:** \`${result.sessionId}\``,
     ``,
     `The delegate will:`,
     `- Listen to the conversation`,
