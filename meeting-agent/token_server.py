@@ -367,15 +367,14 @@ async def get_onboarding_session(session_id: str):
 async def complete_onboarding_session(session_id: str, request: Request):
     """Mark an onboarding session as complete (called by web app after sign-in)."""
     body = await request.json()
-    if session_id in _onboarding_sessions:
-        _onboarding_sessions[session_id] = {
-            "completed": True,
-            "user": {
-                "googleId": body.get("googleId", ""),
-                "email": body.get("email", ""),
-                "name": body.get("name", ""),
-            },
-        }
+    _onboarding_sessions[session_id] = {
+        "completed": True,
+        "user": {
+            "googleId": body.get("googleId", ""),
+            "email": body.get("email", ""),
+            "name": body.get("name", ""),
+        },
+    }
     return JSONResponse({"ok": True})
 
 

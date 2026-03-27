@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -d \"${CLAUDE_PLUGIN_ROOT}/mcp-server/node_modules\" || (cd \"${CLAUDE_PLUGIN_ROOT}/mcp-server\" && npm install && npm run build)"
+            "command": "test -d \"${CLAUDE_PLUGIN_ROOT}/mcp-server/node_modules\" && test -f \"${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js\" || (cd \"${CLAUDE_PLUGIN_ROOT}/mcp-server\" && npm install && npm run build)"
           }
         ]
       }
