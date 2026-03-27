@@ -18,7 +18,7 @@ from telegram.ext import (
     filters,
 )
 
-from calendar_poller import poll_all_users
+from calendar_poller import poll_all_users, get_cached_meeting
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -174,12 +174,11 @@ async def dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     await query.answer()
 
-    parts = query.data.split(":", 2)
-    if len(parts) < 3:
-        await query.edit_message_text("Error: invalid callback data.")
+    _, cache_key = query.data.split(":", 1)
+    meeting = get_cached_meeting(cache_key)
+    if not meeting:
+        await query.edit_message_text("Meeting data expired. Please try /meetings again.")
         return
-
-    _, event_id, meeting_url = parts
 
     user = _get_user_by_chat_id(update.effective_chat.id)
     if not user:
@@ -187,7 +186,7 @@ async def dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     try:
-        result = await _dispatch_agent(user, meeting_url)
+        result = await _dispatch_agent(user, meeting["meeting_url"], meeting.get("summary", "Meeting"))
         await query.edit_message_text(
             f"Delegate dispatched to your meeting!\nSession: {result.get('sessionId', 'started')}"
         )
@@ -200,7 +199,7 @@ async def skip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Handle 'Skip' button press."""
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Skipped. I won't send a delegate to this meeting.")
+    await query.edit_message_text("Skipped. Won't send a delegate to this meeting.")
 
 
 async def context_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -208,16 +207,15 @@ async def context_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
 
-    parts = query.data.split(":", 2)
-    if len(parts) < 3:
-        await query.edit_message_text("Error: invalid callback data.")
+    _, cache_key = query.data.split(":", 1)
+    meeting = get_cached_meeting(cache_key)
+    if not meeting:
+        await query.edit_message_text("Meeting data expired. Please try /meetings again.")
         return ConversationHandler.END
 
-    _, event_id, meeting_url = parts
-
-    # Store meeting URL in user_data for the next message
-    context.user_data["pending_meeting_url"] = meeting_url
-    context.user_data["pending_event_id"] = event_id
+    # Store meeting data in user_data for the next message
+    context.user_data["pending_meeting_url"] = meeting["meeting_url"]
+    context.user_data["pending_meeting_title"] = meeting.get("summary", "Meeting")
 
     await query.edit_message_text(
         "How should your delegate show up in this meeting?\n\n"
@@ -241,8 +239,10 @@ async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("Account not connected.")
         return ConversationHandler.END
 
+    meeting_title = context.user_data.get("pending_meeting_title", "Meeting")
+
     try:
-        result = await _dispatch_agent(user, meeting_url, context=user_context)
+        result = await _dispatch_agent(user, meeting_url, meeting_title, context=user_context)
         await update.message.reply_text(
             f"Delegate dispatched with your instructions!\n"
             f"Session: {result.get('sessionId', 'started')}\n\n"
@@ -254,14 +254,14 @@ async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Clean up
     context.user_data.pop("pending_meeting_url", None)
-    context.user_data.pop("pending_event_id", None)
+    context.user_data.pop("pending_meeting_title", None)
     return ConversationHandler.END
 
 
 async def cancel_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel the context input."""
     context.user_data.pop("pending_meeting_url", None)
-    context.user_data.pop("pending_event_id", None)
+    context.user_data.pop("pending_meeting_title", None)
     await update.message.reply_text("Cancelled. Your delegate won't join this meeting.")
     return ConversationHandler.END
 

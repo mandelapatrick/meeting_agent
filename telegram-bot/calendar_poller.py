@@ -15,6 +15,28 @@ logger = logging.getLogger(__name__)
 # Track notified events to avoid duplicates (event_id -> expiry time)
 _notified: dict[str, datetime] = {}
 
+# Store meeting data keyed by short ID (Telegram callback_data has 64-byte limit)
+_meeting_cache: dict[str, dict] = {}
+_cache_counter = 0
+
+
+def _cache_meeting(event_id: str, meeting_url: str, summary: str) -> str:
+    """Cache meeting data and return a short key for callback_data."""
+    global _cache_counter
+    _cache_counter += 1
+    key = f"m{_cache_counter}"
+    _meeting_cache[key] = {
+        "event_id": event_id,
+        "meeting_url": meeting_url,
+        "summary": summary,
+    }
+    return key
+
+
+def get_cached_meeting(key: str) -> dict | None:
+    """Retrieve cached meeting data by short key."""
+    return _meeting_cache.get(key)
+
 
 def _extract_meeting_url(event: dict) -> str | None:
     """Extract a video meeting URL from a calendar event."""
@@ -164,15 +186,16 @@ async def _poll_user(
 
         text = "\n".join(lines)
 
-        # Build inline keyboard
+        # Build inline keyboard (callback_data max 64 bytes — use short cache keys)
         buttons = []
         if meeting_url:
+            cache_key = _cache_meeting(event_id, meeting_url, summary)
             buttons.append([
-                InlineKeyboardButton("Send Delegate", callback_data=f"dispatch:{event_id}:{meeting_url}"),
-                InlineKeyboardButton("Skip", callback_data=f"skip:{event_id}"),
+                InlineKeyboardButton("Send Delegate", callback_data=f"dispatch:{cache_key}"),
+                InlineKeyboardButton("Skip", callback_data=f"skip:{cache_key}"),
             ])
             buttons.append([
-                InlineKeyboardButton("Send with Context", callback_data=f"context:{event_id}:{meeting_url}"),
+                InlineKeyboardButton("Send with Context", callback_data=f"context:{cache_key}"),
             ])
         else:
             buttons.append([
