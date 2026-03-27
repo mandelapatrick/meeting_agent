@@ -13,7 +13,9 @@ create table if not exists users (
   voice_clone_id text,
   avatar_url text,
   onboarding_completed boolean default false,
-  connectors jsonb default '{"github": false, "slack": false}',
+  connectors jsonb default '{"github": false, "slack": false, "google": false}',
+  telegram_chat_id bigint unique,
+  telegram_link_token text unique,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -52,7 +54,7 @@ create table if not exists brain_entries (
 create table if not exists connector_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id) on delete cascade,
-  provider text not null check (provider in ('github', 'slack')),
+  provider text not null check (provider in ('github', 'slack', 'google')),
   access_token text not null,
   refresh_token text,
   expires_at timestamptz,
@@ -113,14 +115,17 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists users_updated_at on users;
 create trigger users_updated_at
   before update on users
   for each row execute function update_updated_at();
 
+drop trigger if exists brain_entries_updated_at on brain_entries;
 create trigger brain_entries_updated_at
   before update on brain_entries
   for each row execute function update_updated_at();
 
+drop trigger if exists connector_tokens_updated_at on connector_tokens;
 create trigger connector_tokens_updated_at
   before update on connector_tokens
   for each row execute function update_updated_at();

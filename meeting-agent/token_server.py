@@ -91,6 +91,7 @@ async def dispatch_agent(request: Request):
     meeting_id = body.get("meetingId", "")
     bot_name = body.get("botName", "Delegate")
     user_id = body.get("userId", "")
+    user_context = body.get("context", "")
 
     if not meeting_url:
         return JSONResponse({"error": "No meeting URL"}, status_code=400)
@@ -118,6 +119,7 @@ async def dispatch_agent(request: Request):
             "room": room_name,
             "voice_id": user_voice_id,
             "user_name": user_name,
+            "user_context": user_context,
         })
         recall_body["output_media"] = {
             "camera": {

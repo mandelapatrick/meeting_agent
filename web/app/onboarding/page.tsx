@@ -44,7 +44,8 @@ export default function OnboardingPage() {
     setIsSubmitting(true);
     try {
       if (currentStep === 0) {
-        // Leaving profile step — create user record
+        // Leaving profile step — create user record and persist email for OAuth
+        localStorage.setItem("onboarding_email", profileData.email);
         await fetch("/api/onboarding/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -31,14 +31,17 @@ voice_id = os.getenv("DELEGATE_VOICE_ID", "")
 
 
 class MeetingDelegate(Agent):
-    def __init__(self) -> None:
+    def __init__(self, delegate_name: str = "", user_context: str = "") -> None:
+        name = delegate_name or user_name
+        context_block = f"\n{name}'s context:\n{meeting_context}"
+        if user_context:
+            context_block += f"\n\n{name}'s instructions for this meeting:\n{user_context}"
+
         super().__init__(
-            instructions=f"""You are {user_name}'s delegate in a meeting.
+            instructions=f"""You are {name}'s delegate in a meeting.
 Respond to everything you hear. Be concise and natural.
 Use first person. Keep responses under 2 sentences.
-
-{user_name}'s context:
-{meeting_context}""",
+{context_block}""",
         )
 
 
@@ -53,17 +56,23 @@ async def delegate_agent(ctx: agents.JobContext):
     dispatch_voice_id = voice_id  # default from env
     dispatch_user_name = user_name  # default from env
 
+    dispatch_user_context = ""
+
     try:
         metadata = json.loads(ctx.job.metadata or "{}")
         if metadata.get("voice_id"):
             dispatch_voice_id = metadata["voice_id"]
         if metadata.get("user_name"):
             dispatch_user_name = metadata["user_name"]
+        if metadata.get("user_context"):
+            dispatch_user_context = metadata["user_context"]
     except (json.JSONDecodeError, AttributeError):
         pass
 
     print(f"[delegate] Voice ID: {dispatch_voice_id or '(default)'}")
     print(f"[delegate] User: {dispatch_user_name}")
+    if dispatch_user_context:
+        print(f"[delegate] User context: {dispatch_user_context}")
 
     session = AgentSession(
         stt=elevenlabs.STT(),
@@ -80,7 +89,10 @@ async def delegate_agent(ctx: agents.JobContext):
 
     await session.start(
         room=ctx.room,
-        agent=MeetingDelegate(),
+        agent=MeetingDelegate(
+            delegate_name=dispatch_user_name,
+            user_context=dispatch_user_context,
+        ),
     )
 
     print(f"[delegate] Agent joined room: {ctx.room.name}")
