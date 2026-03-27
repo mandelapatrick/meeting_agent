@@ -27,18 +27,16 @@ export default function OnboardingPage() {
   const [connectors, setConnectors] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // If already signed in (e.g. after OAuth redirect), skip to step 2 and prefill profile
+  // Prefill profile data from session (but don't auto-skip sign-in step,
+  // so users can always re-trigger OAuth to get fresh tokens)
   useEffect(() => {
     if (status === "authenticated" && session?.user) {
       setProfileData({
         name: session.user.name || "",
         email: session.user.email || "",
       });
-      if (currentStep === 0) {
-        setCurrentStep(1);
-      }
     }
-  }, [status, session, currentStep]);
+  }, [status, session]);
 
   const isSignedIn = status === "authenticated";
 
