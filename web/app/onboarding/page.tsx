@@ -102,6 +102,28 @@ export default function OnboardingPage() {
             onboardingCompleted: true,
           }),
         });
+
+        // Notify proxy session so MCP client can pick up identity
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get("session");
+        if (sessionId && session?.user) {
+          try {
+            await fetch(
+              `https://meeting-agent-h4ny.onrender.com/api/onboarding/session/${sessionId}/complete`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  googleId: (session as any).googleId,
+                  email: session.user.email,
+                  name: session.user.name,
+                }),
+              }
+            );
+          } catch {
+            // Non-critical
+          }
+        }
       }
     } catch (err) {
       console.error("Onboarding step error:", err);

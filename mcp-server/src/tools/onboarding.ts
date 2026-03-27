@@ -50,13 +50,74 @@ export const openOnboardingToolDef = {
   },
 };
 
+const PROXY_URL =
+  process.env.PROXY_URL || "https://meeting-agent-h4ny.onrender.com";
+
 export async function openOnboardingHandler(): Promise<string> {
   const appUrl = getAppUrl();
-  const onboardingUrl = `${appUrl}/onboarding`;
+
+  // Generate a unique session ID for this onboarding flow
+  const sessionId = `onboard_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const onboardingUrl = `${appUrl}/onboarding?session=${sessionId}`;
+
+  // Register the session with the proxy so the web app can link it
+  try {
+    await fetch(`${PROXY_URL}/api/onboarding/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+  } catch {
+    // Non-critical
+  }
 
   // Open browser
   const { exec } = await import("child_process");
   exec(`open "${onboardingUrl}"`);
+
+  // Poll for onboarding completion in background
+  const pollForCompletion = async () => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const resp = await fetch(
+          `${PROXY_URL}/api/onboarding/session/${sessionId}`
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.completed && data.user) {
+            // Write identity-only token file
+            const fs = await import("fs/promises");
+            const path = await import("path");
+            const tokenPath = path.resolve(
+              process.cwd(),
+              ".claude-delegate-token"
+            );
+            await fs.writeFile(
+              tokenPath,
+              JSON.stringify(
+                {
+                  googleId: data.user.googleId,
+                  email: data.user.email,
+                  name: data.user.name,
+                },
+                null,
+                2
+              )
+            );
+            console.log(
+              "[onboarding] Identity saved to .claude-delegate-token"
+            );
+            return;
+          }
+        }
+      } catch {
+        // Keep polling
+      }
+    }
+  };
+
+  pollForCompletion();
 
   return [
     `Opening onboarding wizard at: ${onboardingUrl}`,
@@ -69,6 +130,7 @@ export async function openOnboardingHandler(): Promise<string> {
     `5. Connect Google Calendar, GitHub, and Slack`,
     `6. Set up your PARA second brain structure`,
     ``,
-    `Once complete, run \`/list-meetings\` to see your upcoming meetings.`,
+    `Your identity will be saved automatically when onboarding completes.`,
+    `Then run \`/list-meetings\` to see your upcoming meetings.`,
   ].join("\n");
 }

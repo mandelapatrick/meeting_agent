@@ -1,9 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { writeFile } from "fs/promises";
-import { resolve } from "path";
-
-const TOKEN_FILE = resolve(process.cwd(), "..", ".claude-delegate-token");
+import { supabase } from "./supabase";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -27,40 +24,39 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
-      // Persist the Google access token and refresh token
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
         token.googleId = account.providerAccountId;
 
-        // Save refresh token to file so the MCP server can use it
-        if (account.refresh_token) {
+        // Save refresh token to Supabase connector_tokens table
+        if (account.refresh_token && account.providerAccountId) {
           try {
-            await writeFile(
-              TOKEN_FILE,
-              JSON.stringify(
-                {
-                  refreshToken: account.refresh_token,
-                  accessToken: account.access_token,
-                  expiresAt: account.expires_at,
-                  googleId: account.providerAccountId,
-                  email: token.email,
-                  name: token.name,
-                },
-                null,
-                2
-              )
+            await supabase.from("connector_tokens").upsert(
+              {
+                user_id: account.providerAccountId,
+                provider: "google",
+                access_token: account.access_token || "",
+                refresh_token: account.refresh_token,
+                expires_at: account.expires_at
+                  ? new Date(account.expires_at * 1000).toISOString()
+                  : null,
+                scopes: [
+                  "calendar.readonly",
+                  "calendar.events.readonly",
+                ],
+              },
+              { onConflict: "user_id,provider" }
             );
           } catch (err) {
-            console.error("Failed to save token file for MCP server:", err);
+            console.error("[auth] Failed to save token to Supabase:", err);
           }
         }
       }
       return token;
     },
     async session({ session, token }) {
-      // Make the access token and Google ID available to the client
       (session as any).accessToken = token.accessToken;
       (session as any).googleId = token.googleId;
       return session;

@@ -41,9 +41,9 @@ export interface Meeting {
 
 export async function listMeetings(days: number = 7): Promise<Meeting[]> {
   const tokenData = await readTokenFile();
-  if (!tokenData?.refreshToken) {
+  if (!tokenData?.googleId && !tokenData?.email) {
     throw new Error(
-      "No Google Calendar credentials found. Run `/onboard` to connect your Google Calendar."
+      "No identity found. Run `/onboard` to connect your Google Calendar."
     );
   }
 
@@ -51,7 +51,9 @@ export async function listMeetings(days: number = 7): Promise<Meeting[]> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      refreshToken: tokenData.refreshToken,
+      googleId: tokenData.googleId,
+      email: tokenData.email,
+      refreshToken: tokenData.refreshToken, // backward compat
       days,
     }),
   });
@@ -62,13 +64,6 @@ export async function listMeetings(days: number = 7): Promise<Meeting[]> {
   }
 
   const data = await response.json();
-
-  // Cache the new access token
-  await writeTokenFile({
-    ...tokenData,
-    accessToken: data.accessToken,
-    expiresAt: Math.floor(Date.now() / 1000) + data.expiresIn,
-  });
 
   // Transform Google Calendar events into Meeting objects
   return (data.events || [])

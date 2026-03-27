@@ -102,13 +102,29 @@ async def _refresh_google_token(refresh_token: str) -> dict:
 
 @app.post("/api/meetings")
 async def list_meetings(request: Request):
-    """Proxy: list Google Calendar meetings using the user's refresh token."""
+    """Proxy: list Google Calendar meetings. Looks up refresh token from Supabase."""
     body = await request.json()
     refresh_token = body.get("refreshToken")
+    google_id = body.get("googleId")
+    email = body.get("email")
     days = body.get("days", 7)
 
+    # Look up refresh token from Supabase if not provided directly
+    if not refresh_token and supabase and (google_id or email):
+        user_id = google_id
+        if not user_id and email:
+            # Look up google_id from users table by email
+            result = supabase.table("users").select("google_id").eq("email", email).execute()
+            if result.data:
+                user_id = result.data[0]["google_id"]
+
+        if user_id:
+            result = supabase.table("connector_tokens").select("refresh_token").eq("user_id", user_id).eq("provider", "google").execute()
+            if result.data:
+                refresh_token = result.data[0]["refresh_token"]
+
     if not refresh_token:
-        return JSONResponse({"error": "No refresh token provided"}, status_code=400)
+        return JSONResponse({"error": "No refresh token found. Please complete onboarding and sign in with Google."}, status_code=400)
 
     # Refresh access token
     token_data = await _refresh_google_token(refresh_token)
@@ -315,6 +331,49 @@ async def get_token(
         print(f"[api] Agent dispatch failed: {e}")
 
     return JSONResponse({"token": token.to_jwt(), "url": LIVEKIT_URL})
+
+
+# ---------------------------------------------------------------------------
+# Onboarding sessions — link browser sign-in to MCP client
+# ---------------------------------------------------------------------------
+
+# In-memory store: sessionId -> {googleId, email, name, completed}
+_onboarding_sessions: dict[str, dict] = {}
+
+
+@app.post("/api/onboarding/session")
+async def create_onboarding_session(request: Request):
+    """Register a new onboarding session (called by MCP before opening browser)."""
+    body = await request.json()
+    session_id = body.get("sessionId", "")
+    if session_id:
+        _onboarding_sessions[session_id] = {"completed": False}
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/onboarding/session/{session_id}")
+async def get_onboarding_session(session_id: str):
+    """Check if an onboarding session completed (polled by MCP)."""
+    session = _onboarding_sessions.get(session_id)
+    if not session:
+        return JSONResponse({"completed": False})
+    return JSONResponse(session)
+
+
+@app.post("/api/onboarding/session/{session_id}/complete")
+async def complete_onboarding_session(session_id: str, request: Request):
+    """Mark an onboarding session as complete (called by web app after sign-in)."""
+    body = await request.json()
+    if session_id in _onboarding_sessions:
+        _onboarding_sessions[session_id] = {
+            "completed": True,
+            "user": {
+                "googleId": body.get("googleId", ""),
+                "email": body.get("email", ""),
+                "name": body.get("name", ""),
+            },
+        }
+    return JSONResponse({"ok": True})
 
 
 @app.get("/health")
