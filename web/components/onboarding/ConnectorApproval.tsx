@@ -1,52 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface ConnectorApprovalProps {
+  telegramToken: string | null;
   onComplete: (connectors: Record<string, boolean>) => void;
 }
 
 const TELEGRAM_BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "ClaudeDelegateBot";
 
-export default function ConnectorApproval({ onComplete }: ConnectorApprovalProps) {
+export default function ConnectorApproval({ telegramToken, onComplete }: ConnectorApprovalProps) {
   const [connectors, setConnectors] = useState<Record<string, boolean>>({
-    google: false,
     github: false,
     slack: false,
   });
-  const [telegramToken, setTelegramToken] = useState<string | null>(null);
-  const [telegramConnected, setTelegramConnected] = useState(false);
-
-  // Check URL params for Google OAuth callback result
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("google") === "connected") {
-      setConnectors((prev) => {
-        const updated = { ...prev, google: true };
-        onComplete(updated);
-        return updated;
-      });
-      const token = params.get("telegram_token");
-      if (token) setTelegramToken(token);
-    }
-  }, [onComplete]);
-
-  const startGoogleOAuth = () => {
-    const params = new URLSearchParams(window.location.search);
-    const sessionParam = params.get("session");
-    // Get email from the page — it's stored by the profile step
-    // We read it from the onboarding URL or pass it via a query param
-    const email = params.get("email") || "";
-    if (!email) {
-      // Fallback: prompt or read from localStorage
-      const stored = localStorage.getItem("onboarding_email");
-      if (stored) {
-        window.location.href = `/api/auth/google?email=${encodeURIComponent(stored)}`;
-        return;
-      }
-    }
-    window.location.href = `/api/auth/google?email=${encodeURIComponent(email)}`;
-  };
+  const [telegramOpened, setTelegramOpened] = useState(false);
 
   const toggle = (id: string) => {
     setConnectors((prev) => {
@@ -65,61 +33,22 @@ export default function ConnectorApproval({ onComplete }: ConnectorApprovalProps
       </div>
 
       <div className="space-y-3">
-        {/* Google — OAuth flow */}
-        <button
-          onClick={startGoogleOAuth}
-          disabled={connectors.google}
-          className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left ${
-            connectors.google
-              ? "border-orange-600/50 bg-orange-600/10"
-              : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-          }`}
-        >
-          <div
-            className={`flex-shrink-0 ${
-              connectors.google ? "text-orange-400" : "text-zinc-500"
-            }`}
-          >
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="text-white font-medium text-sm">Google</span>
-            <p className="text-zinc-500 text-xs mt-0.5">
-              Calendar, Gmail, and Google Drive access for meeting context
-            </p>
-          </div>
-          {connectors.google ? (
-            <span className="text-xs text-orange-400 font-medium">Connected</span>
-          ) : (
-            <span className="text-xs text-zinc-500">Sign in</span>
-          )}
-        </button>
-
-        {/* Telegram — deep link after Google connect */}
-        {connectors.google && (
+        {/* Telegram — deep link */}
+        {telegramToken && (
           <a
-            href={
-              telegramToken
-                ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramToken}`
-                : "#"
-            }
+            href={`https://t.me/${TELEGRAM_BOT_USERNAME}?start=${telegramToken}`}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setTelegramConnected(true)}
+            onClick={() => setTelegramOpened(true)}
             className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left ${
-              telegramConnected
+              telegramOpened
                 ? "border-blue-500/50 bg-blue-500/10"
                 : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
             }`}
           >
             <div
               className={`flex-shrink-0 ${
-                telegramConnected ? "text-blue-400" : "text-zinc-500"
+                telegramOpened ? "text-blue-400" : "text-zinc-500"
               }`}
             >
               <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
@@ -132,7 +61,7 @@ export default function ConnectorApproval({ onComplete }: ConnectorApprovalProps
                 Get meeting notifications and control your delegate via chat
               </p>
             </div>
-            {telegramConnected ? (
+            {telegramOpened ? (
               <span className="text-xs text-blue-400 font-medium">Opened</span>
             ) : (
               <span className="text-xs text-zinc-500">Connect</span>

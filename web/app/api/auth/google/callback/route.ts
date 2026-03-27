@@ -6,19 +6,19 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
-  const email = searchParams.get("state");
+  const session = searchParams.get("state") || "";
   const error = searchParams.get("error");
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
 
   if (error) {
     return NextResponse.redirect(
-      `${appUrl}/onboarding?step=connectors&google=error&reason=${error}`
+      `${appUrl}/onboarding?session=${session}&google=error&reason=${error}`
     );
   }
 
-  if (!code || !email) {
+  if (!code) {
     return NextResponse.redirect(
-      `${appUrl}/onboarding?step=connectors&google=error&reason=missing_params`
+      `${appUrl}/onboarding?session=${session}&google=error&reason=missing_code`
     );
   }
 
@@ -39,28 +39,42 @@ export async function GET(request: NextRequest) {
     const errBody = await tokenRes.text();
     console.error("Google token exchange failed:", errBody);
     return NextResponse.redirect(
-      `${appUrl}/onboarding?step=connectors&google=error&reason=token_exchange`
+      `${appUrl}/onboarding?session=${session}&google=error&reason=token_exchange`
     );
   }
 
   const tokens = await tokenRes.json();
 
-  // Decode the ID token to get google_id
+  // Decode the ID token to get user profile
   const idTokenPayload = JSON.parse(
     Buffer.from(tokens.id_token.split(".")[1], "base64").toString()
   );
 
-  // Look up user by email
+  const email = idTokenPayload.email;
+  const name = idTokenPayload.name || email.split("@")[0];
+  const picture = idTokenPayload.picture || "";
+  const googleId = idTokenPayload.sub;
+
+  // Upsert user — auto-create from Google profile
   const { data: user, error: userErr } = await supabase
     .from("users")
+    .upsert(
+      {
+        email,
+        name,
+        google_id: googleId,
+        avatar_url: picture,
+        connectors: { github: false, slack: false, google: true },
+      },
+      { onConflict: "email" }
+    )
     .select("id")
-    .eq("email", email)
     .single();
 
   if (userErr || !user) {
-    console.error("User lookup failed:", userErr);
+    console.error("User upsert failed:", userErr);
     return NextResponse.redirect(
-      `${appUrl}/onboarding?step=connectors&google=error&reason=user_not_found`
+      `${appUrl}/onboarding?session=${session}&google=error&reason=user_create`
     );
   }
 
@@ -79,19 +93,23 @@ export async function GET(request: NextRequest) {
     { onConflict: "user_id,provider" }
   );
 
-  // Generate a Telegram link token and update user
+  // Generate a Telegram link token
   const telegramLinkToken = crypto.randomUUID();
 
   await supabase
     .from("users")
-    .update({
-      google_id: idTokenPayload.sub,
-      connectors: { github: false, slack: false, google: true },
-      telegram_link_token: telegramLinkToken,
-    })
+    .update({ telegram_link_token: telegramLinkToken })
     .eq("id", user.id);
 
-  return NextResponse.redirect(
-    `${appUrl}/onboarding?step=connectors&google=connected&telegram_token=${telegramLinkToken}`
-  );
+  // Redirect back to onboarding at the voice step with profile data
+  const redirectParams = new URLSearchParams({
+    session,
+    step: "voice",
+    google: "connected",
+    name: encodeURIComponent(name),
+    email: encodeURIComponent(email),
+    telegram_token: telegramLinkToken,
+  });
+
+  return NextResponse.redirect(`${appUrl}/onboarding?${redirectParams.toString()}`);
 }

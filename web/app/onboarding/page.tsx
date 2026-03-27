@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import VoiceCapture from "@/components/onboarding/VoiceCapture";
 import VideoCapture from "@/components/onboarding/VideoCapture";
 import ConnectorApproval from "@/components/onboarding/ConnectorApproval";
 import ParaSetup from "@/components/onboarding/ParaSetup";
 
 const STEPS = [
-  { id: "profile", title: "Your Profile", subtitle: "Tell us who you are" },
+  { id: "signin", title: "Sign In", subtitle: "Connect your Google account" },
   { id: "voice", title: "Voice Clone", subtitle: "Record 30 seconds" },
   { id: "avatar", title: "Profile Photo", subtitle: "Capture your look" },
   { id: "connectors", title: "Connectors", subtitle: "Link your accounts" },
@@ -15,18 +15,41 @@ const STEPS = [
   { id: "complete", title: "Ready", subtitle: "Your delegate awaits" },
 ];
 
+const STEP_INDEX: Record<string, number> = {};
+STEPS.forEach((s, i) => {
+  STEP_INDEX[s.id] = i;
+});
+
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [profileData, setProfileData] = useState({ name: "", email: "" });
+  const [telegramToken, setTelegramToken] = useState<string | null>(null);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [connectors, setConnectors] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Restore position after Google OAuth redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const step = params.get("step");
+    const google = params.get("google");
+    const name = params.get("name");
+    const email = params.get("email");
+    const token = params.get("telegram_token");
+
+    if (google === "connected" && step && STEP_INDEX[step] !== undefined) {
+      setCurrentStep(STEP_INDEX[step]);
+      if (name) setProfileData((p) => ({ ...p, name: decodeURIComponent(name) }));
+      if (email) setProfileData((p) => ({ ...p, email: decodeURIComponent(email) }));
+      if (token) setTelegramToken(token);
+    }
+  }, []);
+
   const canProceed = (() => {
     switch (currentStep) {
       case 0:
-        return profileData.name.length > 0 && profileData.email.length > 0;
+        return false; // Sign-in step uses its own button
       case 1:
         return voiceBlob !== null;
       case 2:
@@ -40,23 +63,15 @@ export default function OnboardingPage() {
     }
   })();
 
+  const startGoogleOAuth = () => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("session") || "";
+    window.location.href = `/api/auth/google?session=${encodeURIComponent(session)}`;
+  };
+
   const handleNext = async () => {
     setIsSubmitting(true);
     try {
-      if (currentStep === 0) {
-        // Leaving profile step — create user record and persist email for OAuth
-        localStorage.setItem("onboarding_email", profileData.email);
-        await fetch("/api/onboarding/complete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: profileData.name,
-            email: profileData.email,
-            onboardingCompleted: false,
-          }),
-        });
-      }
-
       if (currentStep === 1 && voiceBlob) {
         // Leaving voice step — upload immediately
         const voiceForm = new FormData();
@@ -157,39 +172,33 @@ export default function OnboardingPage() {
           {/* Step content */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
             {currentStep === 0 && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-1.5">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={profileData.name}
-                    onChange={(e) =>
-                      setProfileData((p) => ({ ...p, name: e.target.value }))
-                    }
-                    placeholder="Your name as it appears in meetings"
-                    className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-orange-600 transition-colors"
-                  />
+              <div className="space-y-6 text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-800">
+                  <svg className="w-8 h-8 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
                 </div>
                 <div>
-                  <label className="block text-sm text-zinc-400 mb-1.5">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={profileData.email}
-                    onChange={(e) =>
-                      setProfileData((p) => ({ ...p, email: e.target.value }))
-                    }
-                    placeholder="you@company.com"
-                    className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-orange-600 transition-colors"
-                  />
+                  <p className="text-zinc-400 text-sm">
+                    Sign in with Google to get started. This grants access to your
+                    Calendar, Gmail, and Google Drive so your delegate has full context.
+                  </p>
                 </div>
-                <p className="text-zinc-600 text-xs">
-                  Your delegate will identify itself as &ldquo;{profileData.name || "Your Name"}&apos;s
-                  Delegate&rdquo; in meetings.
-                </p>
+                <button
+                  onClick={startGoogleOAuth}
+                  className="w-full px-6 py-3 bg-white hover:bg-zinc-100 text-zinc-900 font-medium rounded-xl transition-colors flex items-center justify-center gap-3"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                  </svg>
+                  Continue with Google
+                </button>
               </div>
             )}
 
@@ -202,7 +211,10 @@ export default function OnboardingPage() {
             )}
 
             {currentStep === 3 && (
-              <ConnectorApproval onComplete={setConnectors} />
+              <ConnectorApproval
+                telegramToken={telegramToken}
+                onComplete={setConnectors}
+              />
             )}
 
             {currentStep === 4 && <ParaSetup onComplete={() => {}} />}
@@ -254,7 +266,7 @@ export default function OnboardingPage() {
 
           {/* Navigation */}
           <div className="flex justify-between mt-6">
-            {currentStep > 0 && currentStep < STEPS.length - 1 ? (
+            {currentStep > 1 && currentStep < STEPS.length - 1 ? (
               <button
                 onClick={handleBack}
                 className="px-4 py-2 text-zinc-400 hover:text-white transition-colors"
@@ -265,7 +277,7 @@ export default function OnboardingPage() {
               <div />
             )}
 
-            {currentStep < STEPS.length - 1 && (
+            {currentStep > 0 && currentStep < STEPS.length - 1 && (
               <button
                 onClick={handleNext}
                 disabled={!canProceed || isSubmitting}

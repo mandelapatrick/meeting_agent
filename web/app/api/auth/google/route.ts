@@ -12,12 +12,7 @@ const SCOPES = [
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const email = searchParams.get("email");
-
-  if (!email) {
-    return NextResponse.json({ error: "Missing email parameter" }, { status: 400 });
-  }
-
+  const session = searchParams.get("session") || "";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
 
   const params = new URLSearchParams({
@@ -27,7 +22,7 @@ export async function GET(request: NextRequest) {
     scope: SCOPES,
     access_type: "offline",
     prompt: "consent",
-    state: email,
+    state: session, // pass onboarding session ID through OAuth
   });
 
   return NextResponse.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`);
