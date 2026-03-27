@@ -3,26 +3,23 @@ name: list-meetings
 description: List upcoming meetings for the current week from Google Calendar. Use when the user asks to see their meetings, schedule, or calendar.
 disable-model-invocation: false
 allowed-tools:
-  - mcp__claude-delegate__list_meetings
-  - mcp__claude-delegate__get_onboarding_status
+  - mcp__claude_ai_Google_Calendar__gcal_list_events
 ---
 
 # List Meetings
 
-Fetch and display the user's upcoming meetings from Google Calendar for the current week.
+Fetch and display the user's upcoming meetings from Google Calendar using Claude.ai's Google Calendar integration.
 
 ## Workflow
 
-1. First check onboarding status with `get_onboarding_status`. If not onboarded, tell the user to run `/onboard` first.
-2. Call `list_meetings` to fetch upcoming meetings.
-3. Display results in a clean table format showing:
+1. Call `gcal_list_events` to fetch upcoming meetings for the next 7 days.
+2. Display results in a clean table format showing:
    - Meeting title
    - Date and time
    - Duration
    - Attendees
-   - Meeting link (Zoom/Google Meet)
-   - Whether a delegate agent is assigned
+   - Meeting link (Zoom/Google Meet) — extract from hangoutLink, conferenceData, description, or location fields
 
 ## Output Format
 
-Present meetings grouped by day, in chronological order. Highlight any meetings that already have a delegate agent assigned.
+Present meetings grouped by day, in chronological order. For each meeting, extract the video meeting URL if available (look in hangoutLink, conferenceData.entryPoints, description, and location fields for Zoom or Google Meet links).

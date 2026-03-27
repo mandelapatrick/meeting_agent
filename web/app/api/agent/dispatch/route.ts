@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
   const body = await request.json();
-  const { meetingUrl, meetingTitle } = body;
+  const { meetingUrl, meetingTitle, email } = body;
 
   if (!meetingUrl) {
     return NextResponse.json(
@@ -21,6 +15,21 @@ export async function POST(request: NextRequest) {
   const apiKey = process.env.RECALL_API_KEY;
   const hasRealKey = apiKey && !apiKey.startsWith("your-");
 
+  // Look up user by email
+  let userName = "User";
+  let userId: string | null = null;
+  if (email) {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, name")
+      .eq("email", email)
+      .single();
+    if (user) {
+      userName = user.name;
+      userId = user.id;
+    }
+  }
+
   if (hasRealKey) {
     const response = await fetch("https://api.recall.ai/api/v1/bot/", {
       method: "POST",
@@ -30,7 +39,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         meeting_url: meetingUrl,
-        bot_name: `${session.user?.name}'s Delegate`,
+        bot_name: `${userName}'s Delegate`,
         real_time_transcription: {
           destination_url: `wss://${process.env.AGENT_WS_HOST || "localhost:8080"}/ws`,
         },
@@ -48,23 +57,14 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
 
     // Record session in Supabase
-    const googleId = (session as any).googleId;
-    if (googleId) {
-      const { data: user } = await supabase
-        .from("users")
-        .select("id")
-        .eq("google_id", googleId)
-        .single();
-
-      if (user) {
-        await supabase.from("agent_sessions").insert({
-          user_id: user.id,
-          meeting_title: meetingTitle,
-          meeting_url: meetingUrl,
-          recall_bot_id: data.id,
-          status: "joining",
-        });
-      }
+    if (userId) {
+      await supabase.from("agent_sessions").insert({
+        user_id: userId,
+        meeting_title: meetingTitle,
+        meeting_url: meetingUrl,
+        recall_bot_id: data.id,
+        status: "joining",
+      });
     }
 
     return NextResponse.json({

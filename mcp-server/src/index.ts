@@ -1,7 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { listMeetingsHandler } from "./tools/list-meetings.js";
 import { addAgentHandler } from "./tools/add-agent.js";
 import {
   getOnboardingStatusHandler,
@@ -19,21 +18,11 @@ const server = new McpServer({
 
 // Register tools with Zod schemas
 server.tool(
-  "list_meetings",
-  "List upcoming meetings for the current week from the user's Google Calendar",
-  {
-    days: z.number().optional().default(7).describe("Number of days ahead to look (default: 7)"),
-  },
-  async (args) => ({
-    content: [{ type: "text", text: await listMeetingsHandler(args) }],
-  })
-);
-
-server.tool(
   "add_agent_to_meeting",
   "Dispatch your AI delegate agent to join a specific meeting",
   {
-    meeting_id: z.string().describe("The meeting ID from list_meetings (e.g., evt_001)"),
+    meeting_url: z.string().describe("The meeting URL (Zoom or Google Meet link)"),
+    meeting_title: z.string().optional().default("Meeting").describe("The meeting title"),
   },
   async (args) => ({
     content: [{ type: "text", text: await addAgentHandler(args) }],

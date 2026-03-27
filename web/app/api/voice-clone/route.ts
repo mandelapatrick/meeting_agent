@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
   const formData = await request.formData();
   const audioFile = formData.get("audio") as File;
+  const email = formData.get("email") as string;
 
   if (!audioFile) {
     return NextResponse.json(
       { error: "No audio file provided" },
+      { status: 400 }
+    );
+  }
+
+  if (!email) {
+    return NextResponse.json(
+      { error: "No email provided" },
       { status: 400 }
     );
   }
@@ -26,9 +28,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Look up user name for the voice clone label
+  const { data: user } = await supabase
+    .from("users")
+    .select("name")
+    .eq("email", email)
+    .single();
+
   // Call ElevenLabs voice cloning API
   const elevenLabsForm = new FormData();
-  elevenLabsForm.append("name", `${session.user?.name || "User"}'s Voice`);
+  elevenLabsForm.append("name", `${user?.name || "User"}'s Voice`);
   elevenLabsForm.append("files", audioFile);
 
   const response = await fetch("https://api.elevenlabs.io/v1/voices/add", {
@@ -50,21 +59,11 @@ export async function POST(request: NextRequest) {
   const voiceId = data.voice_id;
 
   // Store voice_clone_id in Supabase users table
-  // Try google_id first (primary key), fall back to email
-  const googleId = (session as any).googleId || (session as any).user?.id;
-  let result;
-  if (googleId) {
-    result = await supabase
-      .from("users")
-      .update({ voice_clone_id: voiceId })
-      .eq("google_id", googleId);
-  }
-  if (!result?.data || result?.error) {
-    result = await supabase
-      .from("users")
-      .update({ voice_clone_id: voiceId })
-      .eq("email", session.user?.email);
-  }
+  const result = await supabase
+    .from("users")
+    .update({ voice_clone_id: voiceId })
+    .eq("email", email);
+
   if (result?.error) {
     console.error("[voice-clone] Supabase update error:", result.error);
   }

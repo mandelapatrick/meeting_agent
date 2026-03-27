@@ -1,47 +1,28 @@
-import { getMeetingById, getOnboardingStatus, dispatchAgent } from "../services/proxy.js";
-
-export const addAgentToolDef = {
-  name: "add_agent_to_meeting",
-  description:
-    "Dispatch your AI delegate agent to join a specific meeting. The agent will attend using your cloned voice and respond when addressed.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      meeting_id: {
-        type: "string",
-        description: "The meeting ID from list_meetings (e.g., evt_001)",
-      },
-    },
-    required: ["meeting_id"],
-  },
-};
+import { getOnboardingStatus, dispatchAgent } from "../services/proxy.js";
 
 export async function addAgentHandler(args: {
-  meeting_id: string;
+  meeting_url: string;
+  meeting_title?: string;
 }): Promise<string> {
   const status = await getOnboardingStatus();
   if (!status.completed || !status.user) {
     return "Error: You need to complete onboarding first. Run `/onboard` to set up your delegate.";
   }
 
-  const meeting = await getMeetingById(args.meeting_id);
-  if (!meeting) {
-    return `Error: Meeting with ID "${args.meeting_id}" not found. Run \`/list-meetings\` to see available meetings.`;
-  }
+  const meetingUrl = args.meeting_url;
+  const meetingTitle = args.meeting_title || "Meeting";
 
-  if (!meeting.meetingUrl) {
-    return `Error: Meeting "${meeting.title}" has no meeting link. Cannot dispatch agent without a Zoom or Google Meet URL.`;
-  }
-
-  if (meeting.hasAgent) {
-    return `Your delegate is already assigned to "${meeting.title}".`;
+  if (!meetingUrl) {
+    return "Error: No meeting URL provided. Please provide a Zoom or Google Meet link.";
   }
 
   const botName = `${status.user.name}'s Delegate`;
+  const platform = meetingUrl.includes("zoom") ? "Zoom" : "Google Meet";
+
   const result = await dispatchAgent({
-    meetingUrl: meeting.meetingUrl,
-    meetingTitle: meeting.title,
-    meetingId: meeting.id,
+    meetingUrl,
+    meetingTitle,
+    meetingId: meetingUrl,
     botName,
     userId: status.user.id,
   });
@@ -49,11 +30,10 @@ export async function addAgentHandler(args: {
   return [
     `## Delegate Dispatched`,
     ``,
-    `Your AI delegate is joining **${meeting.title}**.`,
+    `Your AI delegate is joining **${meetingTitle}**.`,
     ``,
-    `- **Meeting:** ${meeting.title}`,
-    `- **Time:** ${new Date(meeting.start).toLocaleString()}`,
-    `- **Platform:** ${meeting.platform === "zoom" ? "Zoom" : "Google Meet"}`,
+    `- **Meeting:** ${meetingTitle}`,
+    `- **Platform:** ${platform}`,
     `- **Bot Name:** ${botName}`,
     `- **Status:** ${result.status}`,
     `- **Session ID:** \`${result.sessionId}\``,

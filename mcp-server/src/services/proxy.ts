@@ -12,9 +12,8 @@ const PROXY_URL =
  */
 async function readIdentity(): Promise<Record<string, unknown> | null> {
   // Primary: env vars injected into .mcp.json (always works in sandbox)
-  if (process.env.DELEGATE_GOOGLE_ID || process.env.DELEGATE_EMAIL) {
+  if (process.env.DELEGATE_EMAIL) {
     return {
-      googleId: process.env.DELEGATE_GOOGLE_ID,
       email: process.env.DELEGATE_EMAIL,
       name: process.env.DELEGATE_NAME,
     };
@@ -43,7 +42,6 @@ async function readIdentity(): Promise<Record<string, unknown> | null> {
  * without file I/O (avoids sandbox issues).
  */
 export async function saveIdentity(identity: {
-  googleId: string;
   email: string;
   name: string;
 }): Promise<void> {
@@ -64,108 +62,13 @@ export async function saveIdentity(identity: {
   if (server) {
     server.env = {
       ...server.env,
-      DELEGATE_GOOGLE_ID: identity.googleId,
       DELEGATE_EMAIL: identity.email,
       DELEGATE_NAME: identity.name,
     };
+    // Remove legacy google ID if present
+    delete server.env.DELEGATE_GOOGLE_ID;
     await fs.writeFile(mcpPath, JSON.stringify(config, null, 2) + "\n");
   }
-}
-
-// ---- Meetings ----
-
-export interface Meeting {
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  duration: string;
-  attendees: string[];
-  meetingUrl: string | null;
-  platform: "zoom" | "google_meet" | "unknown";
-  hasAgent: boolean;
-}
-
-export async function listMeetings(days: number = 7): Promise<Meeting[]> {
-  const tokenData = await readIdentity();
-  if (!tokenData?.googleId && !tokenData?.email) {
-    throw new Error(
-      "No identity found. Run `/onboard` to connect your Google Calendar."
-    );
-  }
-
-  const response = await fetch(`${PROXY_URL}/api/meetings`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      googleId: tokenData.googleId,
-      email: tokenData.email,
-      refreshToken: tokenData.refreshToken, // backward compat
-      days,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to list meetings: ${error}`);
-  }
-
-  const data = await response.json();
-
-  // Transform Google Calendar events into Meeting objects
-  return (data.events || [])
-    .filter((event: any) => event.start?.dateTime)
-    .map((event: any) => {
-      const meetingUrl = extractMeetingUrl(event);
-      const start = new Date(event.start.dateTime);
-      const endTime = new Date(event.end.dateTime);
-      const durationMin = Math.round(
-        (endTime.getTime() - start.getTime()) / 60000
-      );
-      const duration =
-        durationMin >= 60
-          ? `${Math.floor(durationMin / 60)} hr${durationMin % 60 ? ` ${durationMin % 60} min` : ""}`
-          : `${durationMin} min`;
-
-      return {
-        id: event.id,
-        title: event.summary || "Untitled",
-        start: event.start.dateTime,
-        end: event.end.dateTime,
-        duration,
-        attendees: (event.attendees || []).map((a: any) => a.email),
-        meetingUrl,
-        platform: meetingUrl
-          ? meetingUrl.includes("zoom")
-            ? "zoom"
-            : "google_meet"
-          : ("unknown" as const),
-        hasAgent: false,
-      };
-    });
-}
-
-function extractMeetingUrl(event: any): string | null {
-  if (event.hangoutLink) return event.hangoutLink;
-  if (event.conferenceData?.entryPoints) {
-    const videoEntry = event.conferenceData.entryPoints.find(
-      (e: any) => e.entryPointType === "video"
-    );
-    if (videoEntry) return videoEntry.uri;
-  }
-  const text = `${event.description || ""} ${event.location || ""}`;
-  const zoomMatch = text.match(/https:\/\/[\w.-]*zoom\.us\/j\/\d+[^\s)"]*/);
-  if (zoomMatch) return zoomMatch[0];
-  const meetMatch = text.match(/https:\/\/meet\.google\.com\/[a-z-]+/);
-  if (meetMatch) return meetMatch[0];
-  return null;
-}
-
-export async function getMeetingById(
-  meetingId: string
-): Promise<Meeting | null> {
-  const meetings = await listMeetings();
-  return meetings.find((m) => m.id === meetingId) ?? null;
 }
 
 // ---- Dispatch ----
@@ -217,7 +120,6 @@ export async function getOnboardingStatus(): Promise<OnboardingStatus> {
     return {
       completed: false,
       steps: {
-        signIn: false,
         profile: false,
         voiceClone: false,
         avatar: false,

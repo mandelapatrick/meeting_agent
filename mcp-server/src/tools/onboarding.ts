@@ -14,7 +14,6 @@ export async function getOnboardingStatusHandler(): Promise<string> {
   const status = await getOnboardingStatus();
 
   const stepLabels: Record<string, string> = {
-    signIn: "Google Sign-In",
     profile: "Name & Email",
     voiceClone: "Voice Clone (30s recording)",
     avatar: "Profile Photo",
@@ -87,7 +86,6 @@ export async function openOnboardingHandler(): Promise<string> {
           const data = await resp.json();
           if (data.completed && data.user) {
             await saveIdentity({
-              googleId: data.user.googleId,
               email: data.user.email,
               name: data.user.name,
             });
@@ -107,12 +105,11 @@ export async function openOnboardingHandler(): Promise<string> {
     `Opening onboarding wizard at: ${onboardingUrl}`,
     ``,
     `Complete these steps in your browser:`,
-    `1. Sign in with Google`,
-    `2. Confirm your name and email`,
-    `3. Record 30 seconds of your voice`,
-    `4. Take a profile photo`,
-    `5. Connect Google Calendar, GitHub, and Slack`,
-    `6. Set up your PARA second brain structure`,
+    `1. Enter your name and email`,
+    `2. Record 30 seconds of your voice`,
+    `3. Take a profile photo`,
+    `4. Connect GitHub and Slack (optional)`,
+    `5. Set up your PARA second brain structure`,
     ``,
     `Your identity will be saved automatically when onboarding completes.`,
     `Then run \`/list-meetings\` to see your upcoming meetings.`,

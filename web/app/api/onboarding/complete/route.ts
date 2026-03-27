@@ -1,27 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
   const body = await request.json().catch(() => ({}));
-  const googleId = (session as any).googleId;
-  const email = session.user.email;
-  const name = session.user.name;
+  const email = body.email;
+  const name = body.name;
 
-  if (!googleId || !email) {
+  if (!email || !name) {
     return NextResponse.json(
-      { error: "Missing user identity" },
+      { error: "Missing name or email" },
       { status: 400 }
     );
   }
 
   const upsertData: Record<string, any> = {
-    google_id: googleId,
     email,
     name,
   };
@@ -36,7 +28,7 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("users")
-    .upsert(upsertData, { onConflict: "google_id" })
+    .upsert(upsertData, { onConflict: "email" })
     .select()
     .single();
 

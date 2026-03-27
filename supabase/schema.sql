@@ -7,13 +7,13 @@ create extension if not exists vector;
 -- Users table
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
-  google_id text unique not null,
-  email text not null,
+  google_id text unique,
+  email text unique not null,
   name text not null,
   voice_clone_id text,
   avatar_url text,
   onboarding_completed boolean default false,
-  connectors jsonb default '{"calendar": false, "github": false, "slack": false}',
+  connectors jsonb default '{"github": false, "slack": false}',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -48,11 +48,11 @@ create table if not exists brain_entries (
   updated_at timestamptz default now()
 );
 
--- Connector tokens (encrypted OAuth tokens)
+-- Connector tokens (OAuth tokens for GitHub/Slack)
 create table if not exists connector_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id) on delete cascade,
-  provider text not null check (provider in ('google', 'github', 'slack')),
+  provider text not null check (provider in ('github', 'slack')),
   access_token text not null,
   refresh_token text,
   expires_at timestamptz,

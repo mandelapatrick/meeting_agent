@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
   const formData = await request.formData();
   const photo = formData.get("photo") as File;
+  const email = formData.get("email") as string;
 
   if (!photo) {
     return NextResponse.json(
@@ -18,10 +13,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const email = session.user?.email;
   if (!email) {
     return NextResponse.json(
-      { error: "No email in session" },
+      { error: "No email provided" },
       { status: 400 }
     );
   }

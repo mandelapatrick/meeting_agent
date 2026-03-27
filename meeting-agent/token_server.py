@@ -2,7 +2,7 @@
 Meeting Agent Proxy API
 
 Serves as the backend for the Claude Code plugin:
-1. Proxies API calls (Google Calendar, Recall.ai, Supabase) so the plugin has no secrets
+1. Proxies API calls (Recall.ai, Supabase) so the plugin has no secrets
 2. Generates LiveKit tokens for the bridge webpage
 3. Dispatches the cloud-hosted LiveKit agent to rooms
 4. Serves the bridge webpage for Recall.ai Output Media
@@ -40,9 +40,6 @@ LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_REGION = os.getenv("RECALL_REGION", "us-west-2")
 RECALL_BASE_URL = f"https://{RECALL_REGION}.recall.ai/api/v1"
@@ -66,99 +63,19 @@ app.add_middleware(
 
 
 def _get_user_identity(token_data: dict) -> dict | None:
-    """Look up user from token data."""
+    """Look up user from token data by email."""
     if not supabase:
         return None
-    google_id = token_data.get("googleId")
     email = token_data.get("email")
-    if google_id:
-        result = supabase.table("users").select("*").eq("google_id", google_id).execute()
-    elif email:
-        result = supabase.table("users").select("*").eq("email", email).execute()
-    else:
-        return None
-    return result.data[0] if result.data else None
-
-
-# ---------------------------------------------------------------------------
-# Proxy: Google Calendar
-# ---------------------------------------------------------------------------
-
-async def _refresh_google_token(refresh_token: str) -> dict:
-    """Refresh a Google OAuth access token."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "refresh_token": refresh_token,
-                "grant_type": "refresh_token",
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-
-@app.post("/api/meetings")
-async def list_meetings(request: Request):
-    """Proxy: list Google Calendar meetings. Looks up refresh token from Supabase."""
-    body = await request.json()
-    refresh_token = body.get("refreshToken")
-    google_id = body.get("googleId")
-    email = body.get("email")
-    days = body.get("days", 7)
-
-    # Look up refresh token from Supabase if not provided directly
-    if not refresh_token and supabase and (google_id or email):
-        # Find the user's UUID from the users table
+    if not email:
+        # Legacy fallback: try google_id
+        google_id = token_data.get("googleId")
         if google_id:
-            result = supabase.table("users").select("id").eq("google_id", google_id).execute()
-        elif email:
-            result = supabase.table("users").select("id").eq("email", email).execute()
-        else:
-            result = None
-
-        user_uuid = result.data[0]["id"] if result and result.data else None
-
-        if user_uuid:
-            result = supabase.table("connector_tokens").select("refresh_token").eq("user_id", user_uuid).eq("provider", "google").execute()
-            if result.data:
-                refresh_token = result.data[0]["refresh_token"]
-
-    if not refresh_token:
-        return JSONResponse({"error": "No refresh token found. Please complete onboarding and sign in with Google."}, status_code=400)
-
-    # Refresh access token
-    token_data = await _refresh_google_token(refresh_token)
-    access_token = token_data["access_token"]
-
-    # Fetch calendar events
-    from datetime import datetime, timedelta, timezone
-    now = datetime.now(timezone.utc)
-    end = now + timedelta(days=days)
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-            params={
-                "timeMin": now.isoformat(),
-                "timeMax": end.isoformat(),
-                "singleEvents": "true",
-                "orderBy": "startTime",
-                "maxResults": "50",
-            },
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-    # Return new access token + events
-    return JSONResponse({
-        "accessToken": access_token,
-        "expiresIn": token_data.get("expires_in", 3600),
-        "events": data.get("items", []),
-    })
+            result = supabase.table("users").select("*").eq("google_id", google_id).execute()
+            return result.data[0] if result.data else None
+        return None
+    result = supabase.table("users").select("*").eq("email", email).execute()
+    return result.data[0] if result.data else None
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +192,7 @@ async def onboarding_status(request: Request):
         return JSONResponse({
             "completed": False,
             "steps": {
-                "signIn": False, "profile": False, "voiceClone": False,
+                "profile": False, "voiceClone": False,
                 "avatar": False, "connectors": False, "paraSetup": False,
             },
         })
@@ -290,11 +207,10 @@ async def onboarding_status(request: Request):
             "onboardingCompleted": user.get("onboarding_completed", False),
         },
         "steps": {
-            "signIn": True,
             "profile": bool(user.get("name")),
             "voiceClone": bool(user.get("voice_clone_id")),
             "avatar": bool(user.get("avatar_url")),
-            "connectors": connectors.get("calendar", False) or connectors.get("github", False) or connectors.get("slack", False),
+            "connectors": connectors.get("github", False) or connectors.get("slack", False),
             "paraSetup": True,
         },
     })
@@ -340,7 +256,7 @@ async def get_token(
 # Onboarding sessions — link browser sign-in to MCP client
 # ---------------------------------------------------------------------------
 
-# In-memory store: sessionId -> {googleId, email, name, completed}
+# In-memory store: sessionId -> {email, name, completed}
 _onboarding_sessions: dict[str, dict] = {}
 
 
@@ -365,12 +281,11 @@ async def get_onboarding_session(session_id: str):
 
 @app.post("/api/onboarding/session/{session_id}/complete")
 async def complete_onboarding_session(session_id: str, request: Request):
-    """Mark an onboarding session as complete (called by web app after sign-in)."""
+    """Mark an onboarding session as complete (called by web app after setup)."""
     body = await request.json()
     _onboarding_sessions[session_id] = {
         "completed": True,
         "user": {
-            "googleId": body.get("googleId", ""),
             "email": body.get("email", ""),
             "name": body.get("name", ""),
         },
