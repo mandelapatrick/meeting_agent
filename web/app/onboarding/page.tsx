@@ -42,7 +42,12 @@ export default function OnboardingPage() {
 
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
-    await signIn("google", { callbackUrl: "/onboarding" });
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionParam = urlParams.get("session");
+    const callbackUrl = sessionParam
+      ? `/onboarding?session=${sessionParam}`
+      : "/onboarding";
+    await signIn("google", { callbackUrl });
   };
 
   const canProceed = (() => {
