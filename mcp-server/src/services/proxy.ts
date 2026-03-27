@@ -17,16 +17,30 @@ function getTokenPath(): string {
   return path.join(getTokenDir(), "identity.json");
 }
 
+function getCwdTokenDir(): string {
+  const path = require("path");
+  return path.join(process.cwd(), ".claude-delegate");
+}
+
+function getCwdTokenPath(): string {
+  const path = require("path");
+  return path.join(getCwdTokenDir(), "identity.json");
+}
+
 async function readTokenFile(): Promise<Record<string, unknown> | null> {
   const fs = await import("fs/promises");
   const path = await import("path");
-  // Try new location first
+  // Try home directory first
   try {
     const data = await fs.readFile(getTokenPath(), "utf-8");
     return JSON.parse(data);
-  } catch {
-    // Fall back to old cwd-based location for backward compat
-  }
+  } catch {}
+  // Try cwd-based location (works inside sandbox)
+  try {
+    const data = await fs.readFile(getCwdTokenPath(), "utf-8");
+    return JSON.parse(data);
+  } catch {}
+  // Legacy fallback
   try {
     const oldPath = path.resolve(process.cwd(), ".claude-delegate-token");
     const data = await fs.readFile(oldPath, "utf-8");
@@ -36,10 +50,18 @@ async function readTokenFile(): Promise<Record<string, unknown> | null> {
   }
 }
 
-async function writeTokenFile(data: Record<string, unknown>): Promise<void> {
+export async function writeTokenFile(data: Record<string, unknown>): Promise<void> {
   const fs = await import("fs/promises");
+  // Primary: home directory
   await fs.mkdir(getTokenDir(), { recursive: true });
   await fs.writeFile(getTokenPath(), JSON.stringify(data, null, 2));
+  // Secondary: cwd (accessible inside sandbox)
+  try {
+    await fs.mkdir(getCwdTokenDir(), { recursive: true });
+    await fs.writeFile(getCwdTokenPath(), JSON.stringify(data, null, 2));
+  } catch {
+    // Best-effort; cwd may not be writable
+  }
 }
 
 // ---- Meetings ----

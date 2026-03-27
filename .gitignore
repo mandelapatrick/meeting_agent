@@ -7,5 +7,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .claude-delegate-token
+.claude-delegate/
 __pycache__/
 .mcp.json

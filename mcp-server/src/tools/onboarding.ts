@@ -1,4 +1,4 @@
-import { getOnboardingStatus, getAppUrl } from "../services/proxy.js";
+import { getOnboardingStatus, getAppUrl, writeTokenFile } from "../services/proxy.js";
 
 export const getOnboardingStatusToolDef = {
   name: "get_onboarding_status",
@@ -86,28 +86,12 @@ export async function openOnboardingHandler(): Promise<string> {
         if (resp.ok) {
           const data = await resp.json();
           if (data.completed && data.user) {
-            // Write identity-only token file to ~/.claude-delegate/
-            const fs = await import("fs/promises");
-            const os = await import("os");
-            const path = await import("path");
-            const tokenDir = path.join(os.homedir(), ".claude-delegate");
-            const tokenPath = path.join(tokenDir, "identity.json");
-            await fs.mkdir(tokenDir, { recursive: true });
-            await fs.writeFile(
-              tokenPath,
-              JSON.stringify(
-                {
-                  googleId: data.user.googleId,
-                  email: data.user.email,
-                  name: data.user.name,
-                },
-                null,
-                2
-              )
-            );
-            console.log(
-              "[onboarding] Identity saved to", tokenPath
-            );
+            await writeTokenFile({
+              googleId: data.user.googleId,
+              email: data.user.email,
+              name: data.user.name,
+            });
+            console.log("[onboarding] Identity saved");
             return;
           }
         }
