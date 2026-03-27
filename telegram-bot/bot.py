@@ -269,8 +269,21 @@ async def cancel_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
+async def post_init(application: Application) -> None:
+    """Start the calendar poller after the event loop is running."""
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        poll_all_users,
+        "interval",
+        minutes=5,
+        args=[application, supabase, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PROXY_URL],
+    )
+    scheduler.start()
+    logger.info("Calendar poller started (every 5 min)")
+
+
 def main() -> None:
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     # Command handlers
     app.add_handler(CommandHandler("start", start_command))
@@ -287,22 +300,13 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel_context)],
+        per_message=False,
     )
     app.add_handler(context_conv)
 
     # Button callbacks for dispatch and skip
     app.add_handler(CallbackQueryHandler(dispatch_callback, pattern=r"^dispatch:"))
     app.add_handler(CallbackQueryHandler(skip_callback, pattern=r"^skip:"))
-
-    # Schedule calendar polling
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        poll_all_users,
-        "interval",
-        minutes=5,
-        args=[app, supabase, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PROXY_URL],
-    )
-    scheduler.start()
 
     logger.info("Claude Delegate Telegram bot started")
     app.run_polling()
