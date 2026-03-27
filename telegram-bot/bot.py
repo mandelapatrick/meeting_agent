@@ -56,20 +56,26 @@ async def _dispatch_agent(
     user: dict, meeting_url: str, meeting_title: str = "Meeting", context: str = ""
 ) -> dict:
     """Call the proxy dispatch endpoint to send the delegate to a meeting."""
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{PROXY_URL}/api/dispatch",
-            json={
-                "userId": user["id"],
-                "meetingUrl": meeting_url,
-                "meetingTitle": meeting_title,
-                "meetingId": meeting_url,
-                "botName": f"{user['name']}'s Delegate",
-                "context": context,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
+    payload = {
+        "userId": user["id"],
+        "meetingUrl": meeting_url,
+        "meetingTitle": meeting_title,
+        "meetingId": meeting_url,
+        "botName": f"{user['name']}'s Delegate",
+        "context": context,
+    }
+    # Render free tier cold starts can take 60+ seconds
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                resp = await client.post(f"{PROXY_URL}/api/dispatch", json=payload)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.ReadTimeout:
+            if attempt == 0:
+                logger.warning("Dispatch timeout (proxy cold start?), retrying...")
+                continue
+            raise
 
 
 # ── Command Handlers ─────────────────────────────────────────────────────────
@@ -186,6 +192,7 @@ async def dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     try:
+        await query.edit_message_text("Dispatching your delegate... (this may take a moment)")
         result = await _dispatch_agent(user, meeting["meeting_url"], meeting.get("summary", "Meeting"))
         await query.edit_message_text(
             f"Delegate dispatched to your meeting!\nSession: {result.get('sessionId', 'started')}"
