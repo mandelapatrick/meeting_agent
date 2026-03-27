@@ -111,15 +111,18 @@ async def list_meetings(request: Request):
 
     # Look up refresh token from Supabase if not provided directly
     if not refresh_token and supabase and (google_id or email):
-        user_id = google_id
-        if not user_id and email:
-            # Look up google_id from users table by email
-            result = supabase.table("users").select("google_id").eq("email", email).execute()
-            if result.data:
-                user_id = result.data[0]["google_id"]
+        # Find the user's UUID from the users table
+        if google_id:
+            result = supabase.table("users").select("id").eq("google_id", google_id).execute()
+        elif email:
+            result = supabase.table("users").select("id").eq("email", email).execute()
+        else:
+            result = None
 
-        if user_id:
-            result = supabase.table("connector_tokens").select("refresh_token").eq("user_id", user_id).eq("provider", "google").execute()
+        user_uuid = result.data[0]["id"] if result and result.data else None
+
+        if user_uuid:
+            result = supabase.table("connector_tokens").select("refresh_token").eq("user_id", user_uuid).eq("provider", "google").execute()
             if result.data:
                 refresh_token = result.data[0]["refresh_token"]
 
