@@ -246,6 +246,7 @@ async def create_anam_session(request: Request):
                 "personaConfig": {
                     "avatarId": avatar_id,
                     "name": body.get("name", "Delegate"),
+                    "silenceBeforeSessionEndSeconds": 0,
                 },
             },
             timeout=15.0,

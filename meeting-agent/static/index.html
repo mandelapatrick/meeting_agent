@@ -97,7 +97,10 @@
         const { sessionToken } = await resp.json();
         log('Got Anam session token');
 
-        const anamClient = createClient(sessionToken);
+        const anamClient = createClient(sessionToken, {
+          disableInputAudio: true,
+          disableBrains: true,
+        });
         log('Anam client created, calling streamToVideoElement...');
 
         // Listen for Anam events
