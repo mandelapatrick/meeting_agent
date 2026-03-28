@@ -96,15 +96,23 @@ STYLE:
             print(f"[gate] SKIP — too short")
             raise StopResponse()
 
-        # Check if the delegate is being addressed
+        # Build name variants: each word in the name + common STT misspellings
         name_lower = self._delegate_name.lower()
-        name_variants = [name_lower, "delegate", f"{name_lower}'s delegate"]
+        name_parts = name_lower.split()  # "mandela patrick" -> ["mandela", "patrick"]
+        name_variants = set(name_parts + [name_lower, "delegate"])
+        # Add common STT misspellings for each name part
+        for part in name_parts:
+            # Fuzzy: match if STT transcript contains something close
+            # Check first 4+ chars as prefix to catch "mandala", "mandara", "mandera"
+            if len(part) >= 4:
+                name_variants.add(part[:4])  # e.g. "mand" catches mandala/mandara/mandera
+
         is_addressed = any(v in text for v in name_variants)
 
         # Check for direct questions
         is_question = text.rstrip().endswith("?")
 
-        print(f"[gate] name='{name_lower}' addressed={is_addressed} question={is_question}")
+        print(f"[gate] variants={name_variants} addressed={is_addressed} question={is_question}")
 
         # Block obvious cross-talk: not addressed and not a question
         if not is_addressed and not is_question:
