@@ -34,8 +34,9 @@ PROXY_URL = os.environ.get("PROXY_URL", "https://meeting-agent-h4ny.onrender.com
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Conversation state for "Send with Context"
+# Conversation states for "Send with Context"
 AWAITING_CONTEXT = 0
+AWAITING_CONTEXT_MODE = 1
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ def _get_user_by_chat_id(chat_id: int) -> dict | None:
 
 
 async def _dispatch_agent(
-    user: dict, meeting_url: str, meeting_title: str = "Meeting", context: str = ""
+    user: dict, meeting_url: str, meeting_title: str = "Meeting", context: str = "", mode: str = "audio"
 ) -> dict:
     """Call the proxy dispatch endpoint to send the delegate to a meeting."""
     payload = {
@@ -63,6 +64,7 @@ async def _dispatch_agent(
         "meetingId": meeting_url,
         "botName": f"{user['name']}'s Delegate",
         "context": context,
+        "mode": mode,
     }
     # Render free tier cold starts can take 60+ seconds
     for attempt in range(2):
@@ -175,8 +177,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ── Callback Query Handlers (inline button presses) ─────────────────────────
 
 
-async def dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle 'Send Delegate' button press."""
+async def _handle_dispatch(update: Update, mode: str) -> None:
+    """Shared dispatch logic for audio/video modes."""
     query = update.callback_query
     await query.answer()
 
@@ -191,15 +193,26 @@ async def dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await query.edit_message_text("Account not connected. Use the onboarding link to set up.")
         return
 
+    mode_label = "video" if mode == "video" else "audio"
     try:
-        await query.edit_message_text("Dispatching your delegate... (this may take a moment)")
-        result = await _dispatch_agent(user, meeting["meeting_url"], meeting.get("summary", "Meeting"))
+        await query.edit_message_text(f"Dispatching {mode_label} delegate... (this may take a moment)")
+        result = await _dispatch_agent(user, meeting["meeting_url"], meeting.get("summary", "Meeting"), mode=mode)
         await query.edit_message_text(
-            f"Delegate dispatched to your meeting!\nSession: {result.get('sessionId', 'started')}"
+            f"Delegate dispatched ({mode_label})!\nSession: {result.get('sessionId', 'started')}"
         )
     except Exception as e:
         logger.exception("Dispatch failed")
         await query.edit_message_text(f"Failed to dispatch delegate: {e}")
+
+
+async def audio_dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle 'Audio Delegate' button press."""
+    await _handle_dispatch(update, mode="audio")
+
+
+async def video_dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle 'Video Delegate' button press."""
+    await _handle_dispatch(update, mode="video")
 
 
 async def skip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -233,35 +246,58 @@ async def context_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive user's meeting context and dispatch with it."""
-    user_context = update.message.text
+    """Receive user's meeting context and ask for audio/video mode."""
+    context.user_data["pending_context"] = update.message.text
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Audio", callback_data="ctx_audio"),
+            InlineKeyboardButton("Video", callback_data="ctx_video"),
+        ]
+    ])
+    await update.message.reply_text(
+        f"Got it! Send as audio or video delegate?",
+        reply_markup=keyboard,
+    )
+    return AWAITING_CONTEXT_MODE
+
+
+async def context_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle audio/video choice after context is provided."""
+    query = update.callback_query
+    await query.answer()
+
+    mode = "video" if query.data == "ctx_video" else "audio"
+    user_context = context.user_data.get("pending_context", "")
     meeting_url = context.user_data.get("pending_meeting_url")
 
     if not meeting_url:
-        await update.message.reply_text("No pending meeting. Use the buttons from a notification.")
+        await query.edit_message_text("No pending meeting. Use the buttons from a notification.")
         return ConversationHandler.END
 
     user = _get_user_by_chat_id(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("Account not connected.")
+        await query.edit_message_text("Account not connected.")
         return ConversationHandler.END
 
     meeting_title = context.user_data.get("pending_meeting_title", "Meeting")
 
     try:
-        result = await _dispatch_agent(user, meeting_url, meeting_title, context=user_context)
-        await update.message.reply_text(
-            f"Delegate dispatched with your instructions!\n"
+        await query.edit_message_text(f"Dispatching {mode} delegate with context...")
+        result = await _dispatch_agent(user, meeting_url, meeting_title, context=user_context, mode=mode)
+        await query.edit_message_text(
+            f"Delegate dispatched ({mode})!\n"
             f"Session: {result.get('sessionId', 'started')}\n\n"
             f"Context: \"{user_context}\""
         )
     except Exception as e:
         logger.exception("Dispatch with context failed")
-        await update.message.reply_text(f"Failed to dispatch delegate: {e}")
+        await query.edit_message_text(f"Failed to dispatch delegate: {e}")
 
     # Clean up
     context.user_data.pop("pending_meeting_url", None)
     context.user_data.pop("pending_meeting_title", None)
+    context.user_data.pop("pending_context", None)
     return ConversationHandler.END
 
 
@@ -305,14 +341,18 @@ def main() -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_context),
                 CommandHandler("cancel", cancel_context),
             ],
+            AWAITING_CONTEXT_MODE: [
+                CallbackQueryHandler(context_mode_callback, pattern=r"^ctx_(audio|video)$"),
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel_context)],
         per_message=False,
     )
     app.add_handler(context_conv)
 
-    # Button callbacks for dispatch and skip
-    app.add_handler(CallbackQueryHandler(dispatch_callback, pattern=r"^dispatch:"))
+    # Button callbacks for audio/video dispatch and skip
+    app.add_handler(CallbackQueryHandler(audio_dispatch_callback, pattern=r"^audio:"))
+    app.add_handler(CallbackQueryHandler(video_dispatch_callback, pattern=r"^video:"))
     app.add_handler(CallbackQueryHandler(skip_callback, pattern=r"^skip:"))
 
     logger.info("Claude Delegate Telegram bot started")

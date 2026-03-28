@@ -191,11 +191,12 @@ async def _poll_user(
         if meeting_url:
             cache_key = _cache_meeting(event_id, meeting_url, summary)
             buttons.append([
-                InlineKeyboardButton("Send Delegate", callback_data=f"dispatch:{cache_key}"),
-                InlineKeyboardButton("Skip", callback_data=f"skip:{cache_key}"),
+                InlineKeyboardButton("Audio Delegate", callback_data=f"audio:{cache_key}"),
+                InlineKeyboardButton("Video Delegate", callback_data=f"video:{cache_key}"),
             ])
             buttons.append([
                 InlineKeyboardButton("Send with Context", callback_data=f"context:{cache_key}"),
+                InlineKeyboardButton("Skip", callback_data=f"skip:{cache_key}"),
             ])
         else:
             buttons.append([

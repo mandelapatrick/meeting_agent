@@ -93,6 +93,7 @@ async def dispatch_agent(request: Request):
     bot_name = body.get("botName", "Delegate")
     user_id = body.get("userId", "")
     user_context = body.get("context", "")
+    mode = body.get("mode", "audio")
 
     if not meeting_url:
         return JSONResponse({"error": "No meeting URL"}, status_code=400)
@@ -101,12 +102,14 @@ async def dispatch_agent(request: Request):
     user_voice_id = ""
     user_name = ""
     user_avatar_id = ""
+    user_avatar_url = ""
     if supabase and user_id:
-        result = supabase.table("users").select("voice_clone_id, name, anam_avatar_id").eq("id", user_id).execute()
+        result = supabase.table("users").select("voice_clone_id, name, anam_avatar_id, avatar_url").eq("id", user_id).execute()
         if result.data:
             user_voice_id = result.data[0].get("voice_clone_id") or ""
             user_name = result.data[0].get("name") or ""
             user_avatar_id = result.data[0].get("anam_avatar_id") or ""
+            user_avatar_url = result.data[0].get("avatar_url") or ""
 
     # Create Recall.ai bot with Output Media
     room_name = f"meeting-{meeting_id[:12]}-{int(__import__('time').time() * 1000)}"
@@ -123,7 +126,8 @@ async def dispatch_agent(request: Request):
             "voice_id": user_voice_id,
             "user_name": user_name,
             "user_context": user_context,
-            "avatar_id": user_avatar_id,
+            "avatar_id": user_avatar_id if mode == "video" else "",
+            "avatar_url": user_avatar_url,
         })
         recall_body["output_media"] = {
             "camera": {
@@ -234,6 +238,7 @@ async def get_token(
     voice_id: str = Query(default=""),
     user_name: str = Query(default=""),
     avatar_id: str = Query(default=""),
+    avatar_url: str = Query(default=""),
 ):
     """Generate LiveKit token and dispatch agent with user metadata."""
     import json

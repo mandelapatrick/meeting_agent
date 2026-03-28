@@ -8,7 +8,6 @@
   <style>
     body {
       margin: 0;
-      background: #1a1a2e;
       color: #fff;
       font-family: system-ui, sans-serif;
       display: flex;
@@ -17,34 +16,68 @@
       height: 100vh;
       overflow: hidden;
     }
-    #status { text-align: center; }
-    #status h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-    #state { font-size: 1.2rem; opacity: 0.7; }
-    #log {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      max-height: 200px;
-      overflow-y: auto;
-      font-size: 0.75rem;
-      opacity: 0.4;
+    /* Google Meet style audio mode */
+    .audio-mode {
+      background: linear-gradient(135deg, #8B7355 0%, #A0896C 30%, #C4A882 60%, #8B7355 100%);
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
     }
+    .avatar-circle {
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.3);
+      object-fit: cover;
+      background: #666;
+    }
+    .user-name {
+      position: absolute;
+      bottom: 24px; left: 24px;
+      font-size: 1rem;
+      font-weight: 400;
+      opacity: 0.9;
+    }
+    /* Fallback when no avatar_url */
+    .fallback-mode {
+      background: #1a1a2e;
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+    }
+    .fallback-mode h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    .fallback-mode .state { font-size: 1.2rem; opacity: 0.7; }
     .listening { color: #4ade80; }
     .speaking { color: #60a5fa; }
     .connecting { color: #facc15; }
     .error { color: #f87171; }
+    #log {
+      position: absolute;
+      bottom: 20px; left: 20px; right: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      opacity: 0.4;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
-  <!-- Avatar video (full viewport, behind status overlay) -->
+  <!-- Avatar video for video mode (full viewport) -->
   <video id="avatar-video" autoplay playsinline
-         style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0;"></video>
+         style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;z-index:5;"></video>
 
-  <div id="status" style="z-index:1;position:relative;">
+  <!-- Audio mode: Google Meet style -->
+  <div id="audio-mode" class="audio-mode" style="display:none;">
+    <img id="avatar-photo" class="avatar-circle" src="" alt="">
+    <div id="audio-name" class="user-name"></div>
+  </div>
+
+  <!-- Fallback: no avatar_url -->
+  <div id="fallback-mode" class="fallback-mode">
     <h1>Claude Delegate</h1>
     <div id="state" class="connecting">Connecting...</div>
   </div>
+
   <div id="log"></div>
 
   <!-- Hidden audio element for agent responses -->
@@ -52,13 +85,12 @@
 
   <script>
     const BACKEND_URL = window.location.origin;
-    const stateEl = document.getElementById('state');
     const logEl = document.getElementById('log');
     const audioContainer = document.getElementById('audio-container');
 
     function setState(cls, text) {
-      stateEl.className = cls;
-      stateEl.textContent = text;
+      const el = document.getElementById('state');
+      if (el) { el.className = cls; el.textContent = text; }
     }
 
     function log(msg) {
@@ -69,12 +101,22 @@
       logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // Get room name from URL query params
+    // Get params from URL
     const params = new URLSearchParams(window.location.search);
     const roomName = params.get('room') || 'default-room';
     const voiceId = params.get('voice_id') || '';
     const userName = params.get('user_name') || '';
     const avatarId = params.get('avatar_id') || '';
+    const avatarUrl = params.get('avatar_url') || '';
+
+    // Set up initial view
+    if (avatarUrl && !avatarId) {
+      // Audio mode: Google Meet style with static avatar photo
+      document.getElementById('fallback-mode').style.display = 'none';
+      document.getElementById('audio-mode').style.display = 'flex';
+      document.getElementById('avatar-photo').src = avatarUrl;
+      document.getElementById('audio-name').textContent = userName || 'Delegate';
+    }
 
     async function start() {
       try {
@@ -87,7 +129,7 @@
         // Step 2: Get LiveKit token from our server
         log(`Getting token for room: ${roomName}`);
         const tokenResp = await fetch(
-          `${BACKEND_URL}/api/token?room=${encodeURIComponent(roomName)}&identity=meeting-bridge&voice_id=${encodeURIComponent(voiceId)}&user_name=${encodeURIComponent(userName)}&avatar_id=${encodeURIComponent(avatarId)}`,
+          `${BACKEND_URL}/api/token?room=${encodeURIComponent(roomName)}&identity=meeting-bridge&voice_id=${encodeURIComponent(voiceId)}&user_name=${encodeURIComponent(userName)}&avatar_id=${encodeURIComponent(avatarId)}&avatar_url=${encodeURIComponent(avatarUrl)}`,
           { headers: { 'ngrok-skip-browser-warning': 'true' } }
         );
         const { token, url } = await tokenResp.json();
@@ -99,17 +141,17 @@
         room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           log(`Subscribed to track from ${participant.identity}: ${track.kind}`);
           if (track.kind === 'audio') {
-            // Attach audio to play it — bot will stream this into the meeting
             const element = track.attach();
             audioContainer.appendChild(element);
             log('Audio attached and playing');
             setState('speaking', 'Speaking...');
           } else if (track.kind === 'video') {
-            // Avatar video track — render fullscreen for Recall.ai Output Media
+            // Video mode: avatar video track — render fullscreen
             const videoEl = document.getElementById('avatar-video');
             track.attach(videoEl);
             videoEl.style.display = 'block';
-            document.getElementById('status').style.display = 'none';
+            document.getElementById('audio-mode').style.display = 'none';
+            document.getElementById('fallback-mode').style.display = 'none';
             log(`Avatar video attached from ${participant.identity}`);
           }
         });
@@ -119,7 +161,12 @@
             const videoEl = document.getElementById('avatar-video');
             track.detach(videoEl);
             videoEl.style.display = 'none';
-            document.getElementById('status').style.display = '';
+            // Restore audio mode or fallback
+            if (avatarUrl) {
+              document.getElementById('audio-mode').style.display = 'flex';
+            } else {
+              document.getElementById('fallback-mode').style.display = 'flex';
+            }
             log('Avatar video detached');
           } else {
             track.detach().forEach(el => el.remove());
