@@ -89,9 +89,11 @@ STYLE:
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:
         """Gate: skip LLM call for speech not directed at the delegate."""
         text = (new_message.text_content or "").lower().strip()
+        print(f"[gate] Heard: '{text}'")
 
         # Skip empty or very short transcripts
         if not text or len(text) < 3:
+            print(f"[gate] SKIP — too short")
             raise StopResponse()
 
         # Check if the delegate is being addressed
@@ -102,9 +104,14 @@ STYLE:
         # Check for direct questions
         is_question = text.rstrip().endswith("?")
 
+        print(f"[gate] name='{name_lower}' addressed={is_addressed} question={is_question}")
+
         # Block obvious cross-talk: not addressed and not a question
         if not is_addressed and not is_question:
+            print(f"[gate] SKIP — not addressed, not a question")
             raise StopResponse()
+
+        print(f"[gate] PASS — sending to LLM")
 
     async def tts_node(
         self, text: AsyncIterable[str], model_settings: ModelSettings
