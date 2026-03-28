@@ -30,13 +30,6 @@
       object-fit: cover;
       background: #666;
     }
-    .user-name {
-      position: absolute;
-      bottom: 24px; left: 24px;
-      font-size: 1rem;
-      font-weight: 400;
-      opacity: 0.9;
-    }
     /* Fallback when no avatar_url */
     .fallback-mode {
       background: #1a1a2e;
@@ -63,7 +56,6 @@
   <!-- Audio mode: Google Meet style -->
   <div id="audio-mode" class="audio-mode" style="display:none;">
     <img id="avatar-photo" class="avatar-circle" src="" alt="">
-    <div id="audio-name" class="user-name"></div>
   </div>
 
   <!-- Fallback: no avatar_url -->
@@ -109,7 +101,6 @@
       document.getElementById('fallback-mode').style.display = 'none';
       document.getElementById('audio-mode').style.display = 'flex';
       document.getElementById('avatar-photo').src = avatarUrl;
-      document.getElementById('audio-name').textContent = userName || 'Delegate';
     }
 
     async function start() {
