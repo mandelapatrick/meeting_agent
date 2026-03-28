@@ -18,8 +18,8 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from livekit import agents
-from livekit.agents import AgentSession, Agent
-from livekit.plugins import elevenlabs, silero, anthropic
+from livekit.agents import AgentSession, Agent, room_io
+from livekit.plugins import elevenlabs, silero, anthropic, anam
 
 from context_loader import load_meeting_context
 
@@ -57,6 +57,7 @@ async def delegate_agent(ctx: agents.JobContext):
     dispatch_user_name = user_name  # default from env
 
     dispatch_user_context = ""
+    dispatch_avatar_id = ""
 
     try:
         metadata = json.loads(ctx.job.metadata or "{}")
@@ -66,11 +67,14 @@ async def delegate_agent(ctx: agents.JobContext):
             dispatch_user_name = metadata["user_name"]
         if metadata.get("user_context"):
             dispatch_user_context = metadata["user_context"]
+        if metadata.get("avatar_id"):
+            dispatch_avatar_id = metadata["avatar_id"]
     except (json.JSONDecodeError, AttributeError):
         pass
 
     print(f"[delegate] Voice ID: {dispatch_voice_id or '(default)'}")
     print(f"[delegate] User: {dispatch_user_name}")
+    print(f"[delegate] Avatar ID: {dispatch_avatar_id or '(none)'}")
     if dispatch_user_context:
         print(f"[delegate] User context: {dispatch_user_context}")
 
@@ -86,6 +90,21 @@ async def delegate_agent(ctx: agents.JobContext):
         ),
         vad=silero.VAD.load(),
     )
+
+    # Start Anam avatar BEFORE session.start() — matches Interview project pattern
+    if dispatch_avatar_id:
+        try:
+            avatar = anam.AvatarSession(
+                persona_config=anam.PersonaConfig(
+                    name=dispatch_user_name or "Delegate",
+                    avatarId=dispatch_avatar_id,
+                ),
+                api_key=os.getenv("ANAM_API_KEY"),
+            )
+            await avatar.start(session, room=ctx.room)
+            print(f"[delegate] Avatar started: {dispatch_avatar_id}")
+        except Exception as e:
+            print(f"[delegate] Avatar failed, continuing audio-only: {e}")
 
     await session.start(
         room=ctx.room,

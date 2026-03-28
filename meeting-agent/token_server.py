@@ -222,45 +222,6 @@ async def onboarding_status(request: Request):
     })
 
 
-# ---------------------------------------------------------------------------
-# Anam avatar session token
-# ---------------------------------------------------------------------------
-
-@app.post("/api/anam-session")
-async def create_anam_session(request: Request):
-    """Create an Anam session token for avatar rendering in the bridge page."""
-    body = await request.json()
-    avatar_id = body.get("avatarId", "")
-
-    if not avatar_id or not ANAM_API_KEY:
-        return JSONResponse({"error": "Missing avatarId or ANAM_API_KEY"}, status_code=400)
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.anam.ai/v1/auth/session-token",
-            headers={
-                "Authorization": f"Bearer {ANAM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "personaConfig": {
-                    "avatarId": avatar_id,
-                    "name": body.get("name", "Delegate"),
-                    "systemPrompt": "You are an idle avatar. Do not speak or respond. Just stay present.",
-                    "maxSessionLengthSeconds": 3600,
-                },
-            },
-            timeout=15.0,
-        )
-
-    if not resp.is_success:
-        return JSONResponse(
-            {"error": f"Anam API error ({resp.status_code}): {resp.text}"},
-            status_code=resp.status_code,
-        )
-
-    return JSONResponse(resp.json())
-
 
 # ---------------------------------------------------------------------------
 # LiveKit token + agent dispatch (existing)
