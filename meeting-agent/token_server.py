@@ -257,8 +257,8 @@ async def get_token(
         "voice_id": voice_id,
         "user_name": user_name,
         "avatar_id": avatar_id,
-        "user_context": request.query_params.get("user_context", ""),
-        "meeting_title": request.query_params.get("meeting_title", "Meeting"),
+        "user_context": user_context,
+        "meeting_title": meeting_title,
     })
 
     try:
