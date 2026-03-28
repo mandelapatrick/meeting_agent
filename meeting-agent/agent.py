@@ -91,21 +91,15 @@ async def delegate_agent(ctx: agents.JobContext):
         vad=silero.VAD.load(),
     )
 
-    # Disable agent audio output when avatar is active (avatar publishes audio+video)
-    room_output = room_io.RoomOutputOptions(
-        audio_enabled=not bool(dispatch_avatar_id),
-    )
-
     await session.start(
         room=ctx.room,
         agent=MeetingDelegate(
             delegate_name=dispatch_user_name,
             user_context=dispatch_user_context,
         ),
-        room_output=room_output,
     )
 
-    # Start Anam avatar if configured
+    # Start Anam avatar if configured — avatar handles its own audio+video output
     if dispatch_avatar_id:
         try:
             avatar = anam.AvatarSession(
@@ -117,7 +111,7 @@ async def delegate_agent(ctx: agents.JobContext):
             await avatar.start(session, room=ctx.room)
             print(f"[delegate] Avatar started: {dispatch_avatar_id}")
         except Exception as e:
-            print(f"[delegate] Avatar failed, falling back to audio-only: {e}")
+            print(f"[delegate] Avatar failed, continuing audio-only: {e}")
 
     print(f"[delegate] Agent joined room: {ctx.room.name}")
     print(f"[delegate] Listening as {dispatch_user_name}'s delegate...")
