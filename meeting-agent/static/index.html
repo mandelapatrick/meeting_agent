@@ -39,7 +39,7 @@
 <body>
   <!-- Avatar video (full viewport, behind status overlay) -->
   <video id="avatar-video" autoplay playsinline
-         style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0;"></video>
+         style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;background:#000;"></video>
 
   <div id="status" style="z-index:1;position:relative;">
     <h1>Claude Delegate</h1>
@@ -98,16 +98,23 @@
         log('Got Anam session token');
 
         const anamClient = createClient(sessionToken);
-        await anamClient.streamToVideoElement('avatar-video');
+        log('Anam client created, calling streamToVideoElement...');
 
-        // Show avatar video, hide status text
-        document.getElementById('avatar-video').style.display = 'block';
-        document.getElementById('status').style.display = 'none';
-        log('Anam avatar streaming');
+        // Listen for Anam events
+        anamClient.addListener('CONNECTION_ESTABLISHED', () => log('Anam: connection established'));
+        anamClient.addListener('CONNECTION_CLOSED', (reason) => log(`Anam: connection closed - ${reason}`));
+        anamClient.addListener('VIDEO_PLAY_STARTED', () => {
+          log('Anam: video playing!');
+          document.getElementById('status').style.display = 'none';
+        });
+        anamClient.addListener('ERROR', (err) => log(`Anam error: ${JSON.stringify(err)}`));
+
+        await anamClient.streamToVideoElement('avatar-video');
+        log('Anam streamToVideoElement resolved');
 
         return anamClient;
       } catch (e) {
-        log(`Anam avatar failed: ${e.message}`);
+        log(`Anam avatar failed: ${e.message} | ${e.stack}`);
         return null;
       }
     }
