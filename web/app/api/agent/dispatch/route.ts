@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         meeting_url: meetingUrl,
-        bot_name: `${userName}'s Delegate`,
+        bot_name: `${userName}'s Agent`,
         real_time_transcription: {
           destination_url: `wss://${process.env.AGENT_WS_HOST || "localhost:8080"}/ws`,
         },
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       botId: data.id,
       status: "joining",
       meetingTitle,
-      message: `Delegate is joining "${meetingTitle}"`,
+      message: `Agent is joining "${meetingTitle}"`,
     });
   }
 
@@ -82,6 +82,6 @@ export async function POST(request: NextRequest) {
     botId: mockBotId,
     status: "joining",
     meetingTitle,
-    message: `Delegate is joining "${meetingTitle}" (mock mode - no Recall API key)`,
+    message: `Agent is joining "${meetingTitle}" (mock mode - no Recall API key)`,
   });
 }

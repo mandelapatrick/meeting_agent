@@ -71,7 +71,7 @@ export default function ParaSetup({ onComplete }: ParaSetupProps) {
           Organize your knowledge using the PARA method.
         </p>
         <p className="text-zinc-500 text-xs">
-          This helps your delegate understand your work context and respond with
+          This helps your agent understand your work context and respond with
           relevant information in meetings.
         </p>
       </div>

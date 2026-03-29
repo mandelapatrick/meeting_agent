@@ -72,7 +72,7 @@ export default function Home() {
             href="/onboarding"
             className="px-8 py-3 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-xl transition-colors"
           >
-            Create Your Delegate
+            Create Your Agent
           </Link>
           <Link
             href="/dashboard"

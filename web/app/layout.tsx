@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Claude Delegate",
-  description: "Your AI delegate for meetings — powered by your voice, context, and knowledge",
+  title: "Meeting Agent",
+  description: "Your AI agent for meetings — powered by your voice, context, and knowledge",
 };
 
 export default function RootLayout({

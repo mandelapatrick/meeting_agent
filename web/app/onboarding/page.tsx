@@ -7,7 +7,7 @@ const TELEGRAM_BOT_USERNAME =
   process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "ClaudeDelegateBot";
 
 const STEPS = [
-  { id: "welcome", title: "Welcome", subtitle: "Meet your AI delegate" },
+  { id: "welcome", title: "Welcome", subtitle: "Meet your AI agent" },
   { id: "signin", title: "Sign In", subtitle: "Connect your Google account" },
   { id: "voice", title: "Voice Clone", subtitle: "Record 30 seconds" },
   {
@@ -152,10 +152,10 @@ export default function OnboardingPage() {
             </svg>
           </div>
           <h3 className="text-xl font-semibold text-white">
-            Your Delegate is Ready
+            Your Agent is Ready
           </h3>
           <p className="text-zinc-400 text-sm max-w-sm mx-auto">
-            You can close this page. Your delegate will notify you on Telegram
+            You can close this page. Your agent will notify you on Telegram
             before upcoming meetings.
           </p>
         </div>
@@ -283,7 +283,7 @@ export default function OnboardingPage() {
                 <div>
                   <p className="text-zinc-400 text-sm">
                     Sign in with Google to get started. This grants access to
-                    your Calendar so your delegate knows your schedule.
+                    your Calendar so your agent knows your schedule.
                   </p>
                 </div>
                 <button
@@ -326,7 +326,7 @@ export default function OnboardingPage() {
                 <div className="text-center">
                   <p className="text-zinc-400 text-sm mb-1">
                     Connect Telegram to get meeting notifications and control
-                    your delegate via chat.
+                    your agent via chat.
                   </p>
                 </div>
 

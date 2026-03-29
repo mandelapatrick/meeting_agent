@@ -87,7 +87,7 @@ export default function VoiceCapture({ onComplete }: VoiceCaptureProps) {
           Read the passage below naturally for 30 seconds.
         </p>
         <p className="text-zinc-500 text-xs">
-          This creates a voice clone so your delegate sounds like you.
+          This creates a voice clone so your agent sounds like you.
         </p>
       </div>
 

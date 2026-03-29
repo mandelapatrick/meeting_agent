@@ -72,7 +72,7 @@ export default function VideoCapture({ onComplete }: VideoCaptureProps) {
           Take a profile photo for your meeting avatar.
         </p>
         <p className="text-zinc-500 text-xs">
-          This photo will be shown as your video feed when your delegate joins
+          This photo will be shown as your video feed when your agent joins
           meetings.
         </p>
       </div>

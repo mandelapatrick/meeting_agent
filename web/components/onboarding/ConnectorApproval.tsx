@@ -58,7 +58,7 @@ export default function ConnectorApproval({ telegramToken, onComplete }: Connect
             <div className="flex-1 min-w-0">
               <span className="text-white font-medium text-sm">Telegram</span>
               <p className="text-zinc-500 text-xs mt-0.5">
-                Get meeting notifications and control your delegate via chat
+                Get meeting notifications and control your agent via chat
               </p>
             </div>
             {telegramOpened ? (

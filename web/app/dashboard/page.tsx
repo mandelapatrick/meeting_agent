@@ -85,7 +85,7 @@ export default function DashboardPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
-            <h1 className="text-lg font-semibold text-white">Claude Delegate</h1>
+            <h1 className="text-lg font-semibold text-white">Meeting Agent</h1>
           </div>
           <a
             href="/onboarding"
@@ -164,7 +164,7 @@ export default function DashboardPage() {
                           </p>
                           {m.hasAgent && (
                             <span className="text-[10px] px-1.5 py-0.5 bg-orange-600/20 text-orange-400 rounded-full flex-shrink-0">
-                              Delegate assigned
+                              Agent assigned
                             </span>
                           )}
                         </div>
@@ -195,7 +195,7 @@ export default function DashboardPage() {
                         >
                           {dispatchingId === m.id
                             ? "Joining..."
-                            : "Send Delegate"}
+                            : "Send Agent"}
                         </button>
                       )}
                     </div>
