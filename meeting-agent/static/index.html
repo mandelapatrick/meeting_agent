@@ -96,6 +96,8 @@
     const avatarUrl = params.get('avatar_url') || '';
     const userContext = params.get('user_context') || '';
     const meetingTitle = params.get('meeting_title') || 'Meeting';
+    const sessionId = params.get('session_id') || '';
+    const userId = params.get('user_id') || '';
 
     // Set up initial view
     if (avatarUrl && !avatarId) {
@@ -116,7 +118,7 @@
         // Step 2: Get LiveKit token from our server
         log(`Getting token for room: ${roomName}`);
         const tokenResp = await fetch(
-          `${BACKEND_URL}/api/token?room=${encodeURIComponent(roomName)}&identity=meeting-bridge&voice_id=${encodeURIComponent(voiceId)}&user_name=${encodeURIComponent(userName)}&avatar_id=${encodeURIComponent(avatarId)}&avatar_url=${encodeURIComponent(avatarUrl)}&user_context=${encodeURIComponent(userContext)}&meeting_title=${encodeURIComponent(meetingTitle)}`,
+          `${BACKEND_URL}/api/token?room=${encodeURIComponent(roomName)}&identity=meeting-bridge&voice_id=${encodeURIComponent(voiceId)}&user_name=${encodeURIComponent(userName)}&avatar_id=${encodeURIComponent(avatarId)}&avatar_url=${encodeURIComponent(avatarUrl)}&user_context=${encodeURIComponent(userContext)}&meeting_title=${encodeURIComponent(meetingTitle)}&session_id=${encodeURIComponent(sessionId)}&user_id=${encodeURIComponent(userId)}`,
           { headers: { 'ngrok-skip-browser-warning': 'true' } }
         );
         const { token, url } = await tokenResp.json();

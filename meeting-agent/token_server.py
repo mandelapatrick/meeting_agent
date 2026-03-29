@@ -47,6 +47,7 @@ RECALL_BASE_URL = f"https://{RECALL_REGION}.recall.ai/api/v1"
 
 AGENT_WEBHOOK_URL = os.getenv("AGENT_WEBHOOK_URL", "")
 ANAM_API_KEY = os.getenv("ANAM_API_KEY", "")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if create_client and SUPABASE_URL and SUPABASE_KEY else None
 
@@ -115,6 +116,19 @@ async def dispatch_agent(request: Request):
     # Create Recall.ai bot with Output Media
     room_name = f"meeting-{meeting_id[:12]}-{int(__import__('time').time() * 1000)}"
 
+    # Create agent session first so we can pass session_id to the agent
+    session_id = ""
+    if supabase and user_id:
+        result = supabase.table("agent_sessions").insert({
+            "user_id": user_id,
+            "meeting_id": meeting_id,
+            "meeting_title": meeting_title,
+            "meeting_url": meeting_url,
+            "status": "joining",
+        }).execute()
+        if result.data:
+            session_id = result.data[0]["id"]
+
     recall_body: dict = {
         "meeting_url": meeting_url,
         "bot_name": bot_name,
@@ -130,6 +144,8 @@ async def dispatch_agent(request: Request):
             "avatar_id": user_avatar_id if mode == "video" else "",
             "avatar_url": user_avatar_url,
             "meeting_title": meeting_title,
+            "session_id": session_id,
+            "user_id": user_id,
         })
         recall_body["output_media"] = {
             "camera": {
@@ -177,18 +193,11 @@ async def dispatch_agent(request: Request):
     status_changes = bot_data.get("status_changes") or []
     status = status_changes[0].get("code", "joining") if status_changes else "joining"
 
-    # Create agent session in Supabase
-    session_id = ""
-    if supabase and user_id:
-        result = supabase.table("agent_sessions").insert({
-            "user_id": user_id,
-            "meeting_id": meeting_id,
-            "meeting_title": meeting_title,
+    # Update session with Recall.ai bot ID
+    if supabase and session_id:
+        supabase.table("agent_sessions").update({
             "recall_bot_id": bot_id,
-            "status": "joining",
-        }).execute()
-        if result.data:
-            session_id = result.data[0]["id"]
+        }).eq("id", session_id).execute()
 
     return JSONResponse({
         "botId": bot_id,
@@ -196,6 +205,87 @@ async def dispatch_agent(request: Request):
         "sessionId": session_id,
         "roomName": room_name,
     })
+
+
+# ---------------------------------------------------------------------------
+# Post-meeting brief: send summary to user via Telegram
+# ---------------------------------------------------------------------------
+
+@app.post("/api/brief/send")
+async def send_brief(request: Request):
+    """Send a post-meeting brief to the user via Telegram."""
+    body = await request.json()
+    session_id = body.get("session_id")
+    user_id = body.get("user_id")
+
+    if not session_id or not user_id or not supabase:
+        return JSONResponse({"error": "Missing session_id, user_id, or no database"}, status_code=400)
+
+    # Look up user's Telegram chat ID
+    user_result = supabase.table("users").select("telegram_chat_id, name").eq("id", user_id).execute()
+    if not user_result.data or not user_result.data[0].get("telegram_chat_id"):
+        print(f"[brief] No telegram_chat_id for user {user_id}, skipping send")
+        return JSONResponse({"ok": False, "reason": "no_telegram"})
+
+    chat_id = user_result.data[0]["telegram_chat_id"]
+
+    # Read the brief from agent_sessions
+    session_result = supabase.table("agent_sessions").select(
+        "meeting_title, summary, action_items"
+    ).eq("id", session_id).execute()
+
+    if not session_result.data:
+        return JSONResponse({"ok": False, "reason": "session_not_found"})
+
+    session = session_result.data[0]
+    title = session.get("meeting_title") or "Meeting"
+    summary = session.get("summary") or "No summary available."
+    action_items = session.get("action_items") or []
+
+    # Format the Telegram message
+    lines = [f'*Meeting Brief: "{title}"*', ""]
+    lines.append(f"*SUMMARY*\n{summary}")
+
+    if action_items:
+        lines.append("\n*ACTION ITEMS*")
+        for item in action_items:
+            if isinstance(item, dict):
+                task = item.get("task", "")
+                owner = item.get("owner", "")
+                deadline = item.get("deadline", "")
+                parts = [task]
+                if owner:
+                    parts.append(owner)
+                if deadline:
+                    parts.append(f"by {deadline}")
+                lines.append(f"• {' — '.join(parts)}")
+            else:
+                lines.append(f"• {item}")
+
+    message = "\n".join(lines)
+
+    # Send via Telegram Bot API
+    if not TELEGRAM_BOT_TOKEN:
+        print("[brief] No TELEGRAM_BOT_TOKEN configured")
+        return JSONResponse({"ok": False, "reason": "no_bot_token"})
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown",
+            },
+            timeout=10.0,
+        )
+
+    if resp.is_success:
+        print(f"[brief] Sent brief for session {session_id} to chat {chat_id}")
+    else:
+        print(f"[brief] Telegram send failed: {resp.status_code} {resp.text}")
+
+    return JSONResponse({"ok": resp.is_success})
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +341,8 @@ async def get_token(
     avatar_url: str = Query(default=""),
     user_context: str = Query(default=""),
     meeting_title: str = Query(default="Meeting"),
+    session_id: str = Query(default=""),
+    user_id: str = Query(default=""),
 ):
     """Generate LiveKit token and dispatch agent with user metadata."""
     import json
@@ -268,6 +360,8 @@ async def get_token(
         "avatar_id": avatar_id,
         "user_context": user_context,
         "meeting_title": meeting_title,
+        "session_id": session_id,
+        "user_id": user_id,
     })
 
     try:
