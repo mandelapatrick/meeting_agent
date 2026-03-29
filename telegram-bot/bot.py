@@ -1,5 +1,6 @@
 """Claude Delegate Telegram Bot — meeting notifications and delegate dispatch."""
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -39,6 +40,9 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 AWAITING_CONTEXT = 0
 AWAITING_CONTEXT_MODE = 1
 
+# Track in-flight dispatches to prevent double-clicks
+_active_dispatches: set[int] = set()
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,16 +71,21 @@ async def _dispatch_agent(
         "context": context,
         "mode": mode,
     }
-    # Render free tier cold starts can take 60+ seconds
-    for attempt in range(2):
+    max_attempts = 4
+    for attempt in range(max_attempts):
         try:
             async with httpx.AsyncClient(timeout=90) as client:
                 resp = await client.post(f"{PROXY_URL}/api/dispatch", json=payload)
+                if resp.status_code == 429 and attempt < max_attempts - 1:
+                    retry_after = int(resp.headers.get("Retry-After", 2 ** attempt))
+                    logger.warning("429 rate limited, retrying in %ds (attempt %d/%d)", retry_after, attempt + 1, max_attempts)
+                    await asyncio.sleep(retry_after)
+                    continue
                 resp.raise_for_status()
                 return resp.json()
         except httpx.ReadTimeout:
-            if attempt == 0:
-                logger.warning("Dispatch timeout (proxy cold start?), retrying...")
+            if attempt < max_attempts - 1:
+                logger.warning("Dispatch timeout (attempt %d/%d), retrying...", attempt + 1, max_attempts)
                 continue
             raise
 
@@ -235,18 +244,24 @@ async def _handle_dispatch(update: Update, mode: str) -> None:
     query = update.callback_query
     await query.answer()
 
+    chat_id = update.effective_chat.id
+    if chat_id in _active_dispatches:
+        await query.edit_message_text("A dispatch is already in progress. Please wait...")
+        return
+
     _, cache_key = query.data.split(":", 1)
     meeting = get_cached_meeting(cache_key)
     if not meeting:
         await query.edit_message_text("Meeting data expired. Please try /meetings again.")
         return
 
-    user = _get_user_by_chat_id(update.effective_chat.id)
+    user = _get_user_by_chat_id(chat_id)
     if not user:
         await query.edit_message_text("Account not connected. Use the onboarding link to set up.")
         return
 
     mode_label = "video" if mode == "video" else "audio"
+    _active_dispatches.add(chat_id)
     try:
         await query.edit_message_text(f"Dispatching {mode_label} delegate... (this may take a moment)")
         result = await _dispatch_agent(user, meeting["meeting_url"], meeting.get("summary", "Meeting"), mode=mode)
@@ -256,6 +271,8 @@ async def _handle_dispatch(update: Update, mode: str) -> None:
     except Exception as e:
         logger.exception("Dispatch failed")
         await query.edit_message_text(f"Failed to dispatch delegate: {e}")
+    finally:
+        _active_dispatches.discard(chat_id)
 
 
 async def audio_dispatch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -300,6 +317,11 @@ async def context_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receive user's meeting context and dispatch audio delegate."""
+    chat_id = update.effective_chat.id
+    if chat_id in _active_dispatches:
+        await update.message.reply_text("A dispatch is already in progress. Please wait...")
+        return ConversationHandler.END
+
     user_context = update.message.text
     meeting_url = context.user_data.get("pending_meeting_url")
 
@@ -307,13 +329,14 @@ async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("No pending meeting. Use the buttons from a notification.")
         return ConversationHandler.END
 
-    user = _get_user_by_chat_id(update.effective_chat.id)
+    user = _get_user_by_chat_id(chat_id)
     if not user:
         await update.message.reply_text("Account not connected.")
         return ConversationHandler.END
 
     meeting_title = context.user_data.get("pending_meeting_title", "Meeting")
 
+    _active_dispatches.add(chat_id)
     try:
         msg = await update.message.reply_text("Dispatching audio delegate with context...")
         result = await _dispatch_agent(user, meeting_url, meeting_title, context=user_context, mode="audio")
@@ -325,6 +348,8 @@ async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         logger.exception("Dispatch with context failed")
         await update.message.reply_text(f"Failed to dispatch delegate: {e}")
+    finally:
+        _active_dispatches.discard(chat_id)
 
     # Clean up
     context.user_data.pop("pending_meeting_url", None)
@@ -337,6 +362,11 @@ async def context_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
 
+    chat_id = update.effective_chat.id
+    if chat_id in _active_dispatches:
+        await query.edit_message_text("A dispatch is already in progress. Please wait...")
+        return ConversationHandler.END
+
     mode = "video" if query.data == "ctx_video" else "audio"
     user_context = context.user_data.get("pending_context", "")
     meeting_url = context.user_data.get("pending_meeting_url")
@@ -345,13 +375,14 @@ async def context_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("No pending meeting. Use the buttons from a notification.")
         return ConversationHandler.END
 
-    user = _get_user_by_chat_id(update.effective_chat.id)
+    user = _get_user_by_chat_id(chat_id)
     if not user:
         await query.edit_message_text("Account not connected.")
         return ConversationHandler.END
 
     meeting_title = context.user_data.get("pending_meeting_title", "Meeting")
 
+    _active_dispatches.add(chat_id)
     try:
         await query.edit_message_text(f"Dispatching {mode} delegate with context...")
         result = await _dispatch_agent(user, meeting_url, meeting_title, context=user_context, mode=mode)
@@ -363,6 +394,8 @@ async def context_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logger.exception("Dispatch with context failed")
         await query.edit_message_text(f"Failed to dispatch delegate: {e}")
+    finally:
+        _active_dispatches.discard(chat_id)
 
     # Clean up
     context.user_data.pop("pending_meeting_url", None)
