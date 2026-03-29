@@ -164,7 +164,7 @@ async def dispatch_agent(request: Request):
         }
 
     async with httpx.AsyncClient() as client:
-        for attempt in range(3):
+        for attempt in range(5):
             resp = await client.post(
                 f"{RECALL_BASE_URL}/bot/",
                 headers={
@@ -174,9 +174,9 @@ async def dispatch_agent(request: Request):
                 json=recall_body,
                 timeout=30.0,
             )
-            if resp.status_code == 429 and attempt < 2:
-                retry_after = int(resp.headers.get("Retry-After", 2 ** attempt))
-                print(f"[dispatch] Recall.ai 429, retrying in {retry_after}s (attempt {attempt + 1}/3)")
+            if resp.status_code == 429 and attempt < 4:
+                retry_after = int(resp.headers.get("Retry-After", 5 * (attempt + 1)))
+                print(f"[dispatch] Recall.ai 429, retrying in {retry_after}s (attempt {attempt + 1}/5)")
                 await asyncio.sleep(retry_after)
                 continue
             break

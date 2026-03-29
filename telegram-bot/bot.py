@@ -71,13 +71,13 @@ async def _dispatch_agent(
         "context": context,
         "mode": mode,
     }
-    max_attempts = 4
+    max_attempts = 3
     for attempt in range(max_attempts):
         try:
-            async with httpx.AsyncClient(timeout=90) as client:
+            async with httpx.AsyncClient(timeout=120) as client:
                 resp = await client.post(f"{PROXY_URL}/api/dispatch", json=payload)
                 if resp.status_code == 429 and attempt < max_attempts - 1:
-                    retry_after = int(resp.headers.get("Retry-After", 2 ** attempt))
+                    retry_after = int(resp.headers.get("Retry-After", 10 * (attempt + 1)))
                     logger.warning("429 rate limited, retrying in %ds (attempt %d/%d)", retry_after, attempt + 1, max_attempts)
                     await asyncio.sleep(retry_after)
                     continue
