@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
       expires_at: expiresAt,
-      scopes: ["calendar.readonly", "gmail.readonly", "drive.readonly"],
+      scopes: ["calendar.readonly"],
     },
     { onConflict: "user_id,provider" }
   );

@@ -117,6 +117,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     supabase.table("users").update({
         "telegram_chat_id": update.effective_chat.id,
         "telegram_link_token": None,
+        "onboarding_completed": True,
     }).eq("id", user["id"]).execute()
 
     await update.message.reply_text(
@@ -179,10 +180,9 @@ async def meetings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             cache_key = _cache_meeting(m["event_id"], m["meeting_url"], m["summary"])
             buttons.append([
                 InlineKeyboardButton("Audio Delegate", callback_data=f"audio:{cache_key}"),
-                InlineKeyboardButton("Video Delegate", callback_data=f"video:{cache_key}"),
+                InlineKeyboardButton("Send with Context", callback_data=f"context:{cache_key}"),
             ])
             buttons.append([
-                InlineKeyboardButton("Send with Context", callback_data=f"context:{cache_key}"),
                 InlineKeyboardButton("Skip", callback_data=f"skip:{cache_key}"),
             ])
         else:
@@ -299,20 +299,37 @@ async def context_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def receive_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive user's meeting context and ask for audio/video mode."""
-    context.user_data["pending_context"] = update.message.text
+    """Receive user's meeting context and dispatch audio delegate."""
+    user_context = update.message.text
+    meeting_url = context.user_data.get("pending_meeting_url")
 
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Audio", callback_data="ctx_audio"),
-            InlineKeyboardButton("Video", callback_data="ctx_video"),
-        ]
-    ])
-    await update.message.reply_text(
-        f"Got it! Send as audio or video delegate?",
-        reply_markup=keyboard,
-    )
-    return AWAITING_CONTEXT_MODE
+    if not meeting_url:
+        await update.message.reply_text("No pending meeting. Use the buttons from a notification.")
+        return ConversationHandler.END
+
+    user = _get_user_by_chat_id(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("Account not connected.")
+        return ConversationHandler.END
+
+    meeting_title = context.user_data.get("pending_meeting_title", "Meeting")
+
+    try:
+        msg = await update.message.reply_text("Dispatching audio delegate with context...")
+        result = await _dispatch_agent(user, meeting_url, meeting_title, context=user_context, mode="audio")
+        await msg.edit_text(
+            f"Delegate dispatched (audio)!\n"
+            f"Session: {result.get('sessionId', 'started')}\n\n"
+            f"Context: \"{user_context}\""
+        )
+    except Exception as e:
+        logger.exception("Dispatch with context failed")
+        await update.message.reply_text(f"Failed to dispatch delegate: {e}")
+
+    # Clean up
+    context.user_data.pop("pending_meeting_url", None)
+    context.user_data.pop("pending_meeting_title", None)
+    return ConversationHandler.END
 
 
 async def context_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -394,9 +411,6 @@ def main() -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_context),
                 CommandHandler("cancel", cancel_context),
             ],
-            AWAITING_CONTEXT_MODE: [
-                CallbackQueryHandler(context_mode_callback, pattern=r"^ctx_(audio|video)$"),
-            ],
         },
         fallbacks=[CommandHandler("cancel", cancel_context)],
         per_message=False,
@@ -405,7 +419,6 @@ def main() -> None:
 
     # Button callbacks for audio/video dispatch and skip
     app.add_handler(CallbackQueryHandler(audio_dispatch_callback, pattern=r"^audio:"))
-    app.add_handler(CallbackQueryHandler(video_dispatch_callback, pattern=r"^video:"))
     app.add_handler(CallbackQueryHandler(skip_callback, pattern=r"^skip:"))
 
     logger.info("Claude Delegate Telegram bot started")

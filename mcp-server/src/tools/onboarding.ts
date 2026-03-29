@@ -16,9 +16,7 @@ export async function getOnboardingStatusHandler(): Promise<string> {
   const stepLabels: Record<string, string> = {
     profile: "Name & Email",
     voiceClone: "Voice Clone (30s recording)",
-    avatar: "Profile Photo",
-    connectors: "Connected Accounts",
-    paraSetup: "PARA Second Brain",
+    telegram: "Telegram Connected",
   };
 
   let output = "## Onboarding Status\n\n";
@@ -105,11 +103,9 @@ export async function openOnboardingHandler(): Promise<string> {
     `Opening onboarding wizard at: ${onboardingUrl}`,
     ``,
     `Complete these steps in your browser:`,
-    `1. Enter your name and email`,
+    `1. Sign in with Google`,
     `2. Record 30 seconds of your voice`,
-    `3. Take a profile photo`,
-    `4. Connect GitHub and Slack (optional)`,
-    `5. Set up your PARA second brain structure`,
+    `3. Connect Telegram`,
     ``,
     `Your identity will be saved automatically when onboarding completes.`,
     `Then run \`/list-meetings\` to see your upcoming meetings.`,
