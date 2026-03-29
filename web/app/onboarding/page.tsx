@@ -221,7 +221,7 @@ export default function OnboardingPage() {
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-3xl font-bold text-white mb-3">Claude Delegate</h2>
+                  <h2 className="text-3xl font-bold text-white mb-3">Meeting Agent</h2>
                   <p className="text-zinc-400 text-base max-w-sm mx-auto">
                     An AI agent that attends meetings for you — with your voice, your context, and your knowledge.
                   </p>

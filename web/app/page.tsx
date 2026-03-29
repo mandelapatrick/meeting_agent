@@ -22,7 +22,7 @@ export default function Home() {
         </div>
 
         <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight mb-4">
-          Claude Delegate
+          Meeting Agent
         </h1>
         <p className="text-xl text-zinc-400 mb-10 max-w-lg mx-auto">
           An AI agent that attends meetings for you — with your voice, your
