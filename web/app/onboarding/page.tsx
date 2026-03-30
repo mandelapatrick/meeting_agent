@@ -79,6 +79,28 @@ export default function OnboardingPage() {
         voiceForm.append("audio", voiceBlob, "voice.webm");
         voiceForm.append("email", profileData.email);
         await fetch("/api/voice-clone", { method: "POST", body: voiceForm });
+
+        // Notify proxy session early so MCP plugin users get identity
+        // (they may skip Telegram since the plugin is their interface)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get("session");
+        if (sessionId) {
+          try {
+            await fetch(
+              `https://meeting-agent-h4ny.onrender.com/api/onboarding/session/${sessionId}/complete`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  email: profileData.email,
+                  name: profileData.name,
+                }),
+              }
+            );
+          } catch {
+            // Non-critical
+          }
+        }
       }
 
       if (currentStep === 3) {
