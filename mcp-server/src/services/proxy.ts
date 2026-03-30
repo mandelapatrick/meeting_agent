@@ -45,6 +45,11 @@ export async function saveIdentity(identity: {
   email: string;
   name: string;
 }): Promise<void> {
+  // When running as a plugin, identity comes from userConfig env vars — skip file writes
+  if (process.env.CLAUDE_PLUGIN_ROOT) {
+    return;
+  }
+
   const fs = await import("fs/promises");
   const path = await import("path");
 
@@ -57,8 +62,10 @@ export async function saveIdentity(identity: {
     config = { mcpServers: {} };
   }
 
-  // Inject identity as env vars into the claude-delegate server config
-  const server = config.mcpServers?.["claude-delegate"];
+  // Inject identity as env vars into the meeting-agent server config
+  const server =
+    config.mcpServers?.["meeting-agent"] ||
+    config.mcpServers?.["claude-delegate"];
   if (server) {
     server.env = {
       ...server.env,

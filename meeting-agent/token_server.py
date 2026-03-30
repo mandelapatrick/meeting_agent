@@ -328,6 +328,189 @@ async def onboarding_status(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Calendar: list upcoming meetings
+# ---------------------------------------------------------------------------
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+
+@app.post("/api/calendar/list")
+async def list_calendar_events(request: Request):
+    """List upcoming calendar events for a user (identified by email)."""
+    body = await request.json()
+    email = body.get("email")
+    days = body.get("days", 1)
+
+    if not email or not supabase:
+        return JSONResponse({"error": "Missing email or no database"}, status_code=400)
+
+    # Look up user
+    user_result = supabase.table("users").select("id").eq("email", email).execute()
+    if not user_result.data:
+        return JSONResponse({"error": "User not found"}, status_code=404)
+
+    user_id = user_result.data[0]["id"]
+
+    # Get Google tokens
+    token_result = (
+        supabase.table("connector_tokens")
+        .select("access_token, refresh_token, expires_at")
+        .eq("user_id", user_id)
+        .eq("provider", "google")
+        .single()
+        .execute()
+    )
+    token_row = token_result.data
+    if not token_row or not token_row.get("refresh_token"):
+        return JSONResponse({"error": "No Google Calendar connected"}, status_code=400)
+
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build as build_service
+    from datetime import datetime, timedelta, timezone
+    import re
+
+    creds = Credentials(
+        token=token_row["access_token"],
+        refresh_token=token_row["refresh_token"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
+
+    if creds.expired or not creds.valid:
+        from google.auth.transport.requests import Request as GoogleRequest
+        creds.refresh(GoogleRequest())
+        supabase.table("connector_tokens").update({
+            "access_token": creds.token,
+            "expires_at": creds.expiry.isoformat() if creds.expiry else None,
+        }).eq("user_id", user_id).eq("provider", "google").execute()
+
+    service = build_service("calendar", "v3", credentials=creds)
+    now_dt = datetime.now(timezone.utc)
+    end_dt = now_dt + timedelta(days=days)
+
+    events_result = (
+        service.events()
+        .list(
+            calendarId="primary",
+            timeMin=now_dt.isoformat(),
+            timeMax=end_dt.isoformat(),
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
+
+    def extract_meeting_url(event):
+        if event.get("hangoutLink"):
+            return event["hangoutLink"]
+        for ep in event.get("conferenceData", {}).get("entryPoints", []):
+            if ep.get("entryPointType") == "video":
+                return ep.get("uri")
+        for field in ("location", "description"):
+            text = event.get(field, "") or ""
+            match = re.search(
+                r"https?://(?:[\w-]+\.)?zoom\.us/j/\S+|https?://meet\.google\.com/\S+",
+                text,
+            )
+            if match:
+                return match.group(0)
+        return None
+
+    meetings = []
+    for event in events_result.get("items", []):
+        start = event["start"].get("dateTime", event["start"].get("date"))
+        end = event["end"].get("dateTime", event["end"].get("date"))
+        attendees = [
+            a.get("displayName") or a.get("email", "")
+            for a in event.get("attendees", [])
+            if not a.get("self")
+        ]
+        meetings.append({
+            "title": event.get("summary", "Untitled Meeting"),
+            "start": start,
+            "end": end,
+            "meetingUrl": extract_meeting_url(event),
+            "attendees": attendees,
+            "eventId": event["id"],
+        })
+
+    return JSONResponse({"meetings": meetings})
+
+
+# ---------------------------------------------------------------------------
+# Sessions: active status and meeting briefs
+# ---------------------------------------------------------------------------
+
+@app.post("/api/sessions/active")
+async def get_active_sessions(request: Request):
+    """Get active agent sessions for a user."""
+    body = await request.json()
+    email = body.get("email")
+
+    if not email or not supabase:
+        return JSONResponse({"error": "Missing email or no database"}, status_code=400)
+
+    user_result = supabase.table("users").select("id").eq("email", email).execute()
+    if not user_result.data:
+        return JSONResponse({"error": "User not found"}, status_code=404)
+
+    user_id = user_result.data[0]["id"]
+    result = (
+        supabase.table("agent_sessions")
+        .select("id, meeting_title, status, created_at")
+        .eq("user_id", user_id)
+        .in_("status", ["pending", "joining", "active"])
+        .order("created_at", desc=True)
+        .limit(5)
+        .execute()
+    )
+
+    return JSONResponse({"sessions": result.data or []})
+
+
+@app.post("/api/brief/get")
+async def get_brief(request: Request):
+    """Get post-meeting brief for a session or the latest completed session."""
+    body = await request.json()
+    session_id = body.get("sessionId")
+    email = body.get("email")
+
+    if not supabase:
+        return JSONResponse({"error": "No database"}, status_code=400)
+
+    if session_id:
+        result = (
+            supabase.table("agent_sessions")
+            .select("id, meeting_title, summary, action_items, status, created_at")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        return JSONResponse({"brief": result.data})
+
+    if email:
+        user_result = supabase.table("users").select("id").eq("email", email).execute()
+        if not user_result.data:
+            return JSONResponse({"error": "User not found"}, status_code=404)
+
+        user_id = user_result.data[0]["id"]
+        result = (
+            supabase.table("agent_sessions")
+            .select("id, meeting_title, summary, action_items, status, created_at")
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+        )
+        return JSONResponse({"briefs": result.data or []})
+
+    return JSONResponse({"error": "Provide sessionId or email"}, status_code=400)
+
+
+# ---------------------------------------------------------------------------
 # LiveKit token + agent dispatch (existing)
 # ---------------------------------------------------------------------------
 

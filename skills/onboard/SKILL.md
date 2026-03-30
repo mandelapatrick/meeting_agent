@@ -3,8 +3,8 @@ name: onboard
 description: Set up your AI delegate by creating your voice clone, avatar, and connecting your accounts. Use when the user wants to set up, configure, or create their delegate.
 disable-model-invocation: false
 allowed-tools:
-  - mcp__claude-delegate__get_onboarding_status
-  - mcp__claude-delegate__open_onboarding
+  - mcp__meeting-agent__get_onboarding_status
+  - mcp__meeting-agent__open_onboarding
 ---
 
 # Onboard — Create Your AI Delegate

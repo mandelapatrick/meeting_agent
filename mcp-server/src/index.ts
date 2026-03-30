@@ -10,9 +10,14 @@ import {
   searchBrainHandler,
   addBrainEntryHandler,
 } from "./tools/manage-brain.js";
+import { listMeetingsHandler } from "./tools/list-meetings.js";
+import {
+  getAgentStatusHandler,
+  getMeetingBriefHandler,
+} from "./tools/sessions.js";
 
 const server = new McpServer({
-  name: "claude-delegate",
+  name: "meeting-agent",
   version: "0.1.0",
 });
 
@@ -75,6 +80,46 @@ server.tool(
   },
   async (args) => ({
     content: [{ type: "text", text: await addBrainEntryHandler(args) }],
+  })
+);
+
+server.tool(
+  "list_meetings",
+  "List upcoming meetings from the user's Google Calendar",
+  {
+    days: z
+      .number()
+      .optional()
+      .default(1)
+      .describe("Number of days to look ahead (default: 1)"),
+  },
+  async (args) => ({
+    content: [{ type: "text", text: await listMeetingsHandler(args) }],
+  })
+);
+
+server.tool(
+  "get_agent_status",
+  "Check the status of active AI delegate sessions in meetings",
+  {},
+  async () => ({
+    content: [{ type: "text", text: await getAgentStatusHandler() }],
+  })
+);
+
+server.tool(
+  "get_meeting_brief",
+  "Get post-meeting briefs with summaries and action items",
+  {
+    session_id: z
+      .string()
+      .optional()
+      .describe(
+        "Specific session ID to get brief for. If omitted, returns recent briefs."
+      ),
+  },
+  async (args) => ({
+    content: [{ type: "text", text: await getMeetingBriefHandler(args) }],
   })
 );
 

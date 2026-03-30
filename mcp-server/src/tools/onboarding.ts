@@ -68,9 +68,15 @@ export async function openOnboardingHandler(): Promise<string> {
     // Non-critical
   }
 
-  // Open browser
-  const { exec } = await import("child_process");
-  exec(`open "${onboardingUrl}"`);
+  // Open browser (only works in CLI, not in Cowork — URL is returned as clickable link)
+  if (!process.env.CLAUDE_PLUGIN_ROOT) {
+    try {
+      const { exec } = await import("child_process");
+      exec(`open "${onboardingUrl}"`);
+    } catch {
+      // Non-critical — user can click the URL below
+    }
+  }
 
   // Poll for onboarding completion in background
   const pollForCompletion = async () => {

@@ -11,7 +11,7 @@
       "name": "meeting-agent",
       "source": "./",
       "description": "AI meeting delegate that joins Google Meet and Zoom calls, listens, and responds using your cloned voice",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "category": "productivity",
       "tags": ["meetings", "voice-agent", "livekit", "recall-ai"]
     }

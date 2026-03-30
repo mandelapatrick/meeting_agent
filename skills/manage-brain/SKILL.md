@@ -8,8 +8,8 @@ allowed-tools:
   - Write
   - Glob
   - Grep
-  - mcp__claude-delegate__search_brain
-  - mcp__claude-delegate__add_brain_entry
+  - mcp__meeting-agent__search_brain
+  - mcp__meeting-agent__add_brain_entry
 ---
 
 # Manage Second Brain
