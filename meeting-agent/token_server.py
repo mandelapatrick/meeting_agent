@@ -308,20 +308,23 @@ async def onboarding_status(request: Request):
         })
 
     connectors = user.get("connectors") or {}
+    has_profile = bool(user.get("name"))
+    has_voice = bool(user.get("voice_clone_id"))
+    # Consider onboarding complete when profile + voice are done
+    # (minimum viable for agent operation — Telegram is optional for plugin users)
+    is_completed = has_profile and has_voice
     return JSONResponse({
-        "completed": user.get("onboarding_completed", False),
+        "completed": is_completed,
         "user": {
             "id": user["id"],
             "name": user.get("name", ""),
             "email": user.get("email", ""),
-            "onboardingCompleted": user.get("onboarding_completed", False),
+            "onboardingCompleted": is_completed,
         },
         "steps": {
-            "profile": bool(user.get("name")),
-            "voiceClone": bool(user.get("voice_clone_id")),
-            "avatar": bool(user.get("avatar_url")),
-            "connectors": connectors.get("github", False) or connectors.get("slack", False),
-            "paraSetup": True,
+            "profile": has_profile,
+            "voiceClone": has_voice,
+            "telegram": bool(user.get("telegram_chat_id")),
         },
     })
 
